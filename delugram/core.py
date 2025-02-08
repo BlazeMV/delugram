@@ -9,7 +9,7 @@ from deluge import component
 from deluge.common import fsize, ftime, fdate, fpeer, fpcnt, fspeed
 from deluge.core.rpcserver import export
 from deluge.plugins.pluginbase import CorePluginBase
-from telegram import (Bot, Update, ParseMode)
+from telegram import (Bot, Update, ParseMode, ReplyKeyboardRemove)
 from telegram.ext import (Updater, CommandHandler, CallbackContext, ConversationHandler, MessageHandler, Filters)
 from telegram.utils.request import Request
 
@@ -84,20 +84,20 @@ class Core(CorePluginBase):
                         ADD_TORRENT: [MessageHandler(Filters.document, self.tg_cmd_help)],
                         ADD_URL: [MessageHandler(Filters.text, self.tg_cmd_help)]
                     },
-                    fallbacks=[CommandHandler('cancel', self.tg_cmd_help)]
+                    fallbacks=[CommandHandler('cancel', self.tg_cmd_cancel)]
                 ),
                 'list_in_help': True
             },
             {
                 'name': 'status',
                 'description': 'Show status of active torrents',
-                'handler': CommandHandler('status', self.tg_cmd_help),
+                'handler': CommandHandler('status', self.tg_cmd_status),
                 'list_in_help': True
             },
             {
                 'name': 'cancel',
                 'description': 'Cancels the current operation',
-                'handler': CommandHandler('cancel', self.tg_cmd_help),
+                'handler': CommandHandler('cancel', self.tg_cmd_cancel),
                 'list_in_help': True
             },
             {
@@ -229,3 +229,25 @@ class Core(CorePluginBase):
             parse_mode='Markdown',
             # reply_to_message_id=update.message.message_id
         )
+
+    def tg_cmd_status(self, update: Update, context: CallbackContext):
+        context.bot.send_message(
+            text= 'No active torrents found',
+            chat_id=update.effective_chat.id,
+            parse_mode='Markdown'
+            # reply_to_message_id=update.message.message_id
+        )
+
+    def tg_cmd_cancel(self, update: Update, context: CallbackContext):
+        context.bot.send_message(
+            text='Operation cancelled',
+            chat_id=update.effective_chat.id,
+            parse_mode='Markdown',
+            reply_markup=ReplyKeyboardRemove()
+            # reply_to_message_id=update.message.message_id
+        )
+        return ConversationHandler.END
+
+    #########
+    #  Section: Helpers
+    #########
