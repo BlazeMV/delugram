@@ -1,0 +1,118 @@
+Metadata-Version: 2.1
+Name: deluge
+Version: 2.1.1
+Summary: BitTorrent Client
+Home-page: https://deluge-torrent.org
+Author: Deluge Team
+Maintainer: Calum Lind
+Maintainer-email: calumlind+deluge@gmail.com
+License: GPLv3+
+Project-URL: GitHub (mirror), https://github.com/deluge-torrent/deluge
+Project-URL: Sourcecode, http://git.deluge-torrent.org/deluge
+Project-URL: Issues, https://dev.deluge-torrent.org/report/1
+Project-URL: Discussion, https://forum.deluge-torrent.org
+Project-URL: Documentation, https://deluge.readthedocs.io
+Keywords: torrent bittorrent p2p fileshare filesharing
+Classifier: Development Status :: 4 - Beta
+Classifier: Environment :: Console
+Classifier: Environment :: Web Environment
+Classifier: Environment :: X11 Applications :: GTK
+Classifier: Framework :: Twisted
+Classifier: Intended Audience :: End Users/Desktop
+Classifier: License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)
+Classifier: Programming Language :: Python
+Classifier: Operating System :: MacOS :: MacOS X
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Operating System :: POSIX
+Classifier: Topic :: Internet
+Requires-Python: >=3.6
+Description-Content-Type: text/markdown
+License-File: LICENSE
+License-File: AUTHORS
+Requires-Dist: twisted[tls] (>=17.1)
+Requires-Dist: pyasn1
+Requires-Dist: rencode
+Requires-Dist: pyopenssl
+Requires-Dist: pyxdg
+Requires-Dist: mako
+Requires-Dist: setuptools
+Requires-Dist: zope.interface
+Requires-Dist: pywin32 ; sys_platform == "win32"
+Requires-Dist: certifi ; sys_platform == "win32"
+Provides-Extra: all
+Requires-Dist: setproctitle ; extra == 'all'
+Requires-Dist: pillow ; extra == 'all'
+Requires-Dist: chardet ; extra == 'all'
+Requires-Dist: ifaddr ; extra == 'all'
+
+# Deluge BitTorrent Client
+
+[![build-status]][github-ci] [![docs-status]][rtd-deluge]
+
+Deluge is a BitTorrent client that utilizes a daemon/client model.
+It has various user interfaces available such as the GTK-UI, Web-UI and
+Console-UI. It uses [libtorrent][lt] at its core to handle the BitTorrent
+protocol.
+
+## Install
+
+From [PyPi](https://pypi.org/project/deluge):
+
+    pip install deluge
+
+with all optional dependencies:
+
+    pip install deluge[all]
+
+From source code:
+
+    pip install .
+
+with all optional dependencies:
+
+    pip install .[all]
+
+See [DEPENDS](DEPENDS.md) and [Installing/Source] for dependency details.
+
+## Usage
+
+The various user-interfaces and Deluge daemon can be started with the following commands.
+
+Use the `--help` option for further command options.
+
+### Gtk UI
+
+`deluge` or `deluge-gtk`
+
+### Console UI
+
+`deluge-console`
+
+### Web UI
+
+`deluge-web`
+
+Open http://localhost:8112 with default password `deluge`.
+
+### Daemon
+
+`deluged`
+
+See the [Thinclient guide] to connect to the daemon from another computer.
+
+## Contact
+
+- [Homepage](https://deluge-torrent.org)
+- [User guide][user guide]
+- [Forum](https://forum.deluge-torrent.org)
+- [IRC Libera.Chat #deluge](irc://irc.libera.chat/deluge)
+- [Discord](https://discord.gg/nwaHSE6tqn)
+
+[user guide]: https://dev.deluge-torrent.org/wiki/UserGuide
+[thinclient guide]: https://dev.deluge-torrent.org/wiki/UserGuide/ThinClient
+[installing/source]: https://dev.deluge-torrent.org/wiki/Installing/Source
+[build-status]: https://github.com/deluge-torrent/deluge/actions/workflows/ci.yml/badge.svg?branch=develop "CI"
+[github-ci]: https://github.com/deluge-torrent/deluge/actions/workflows/ci.yml
+[docs-status]: https://readthedocs.org/projects/deluge/badge/?version=latest
+[rtd-deluge]: https://deluge.readthedocs.io/en/latest/?badge=latest "Documentation Status"
+[lt]: https://libtorrent.org

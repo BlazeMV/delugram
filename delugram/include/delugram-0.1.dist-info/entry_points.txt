@@ -1,0 +1,11 @@
+[deluge.plugin.core]
+delugram = delugram:CorePlugin
+
+[deluge.plugin.gtk3ui]
+delugram = delugram:Gtk3UIPlugin
+
+[deluge.plugin.web]
+delugram = delugram:WebUIPlugin
+
+[delugram.libpaths]
+include = delugram.include
