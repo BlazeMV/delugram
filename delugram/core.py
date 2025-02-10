@@ -155,8 +155,17 @@ class Core(CorePluginBase):
 
         # register torrent download finished event listener
         self.event_manager.register_event_handler(
+            'TorrentAddedEvent', self._on_torrent_added
+        )
+        self.event_manager.register_event_handler(
+            'TorrentRemovedEvent', self._on_torrent_removed
+        )
+        self.event_manager.register_event_handler(
             'TorrentFinishedEvent', self._on_torrent_finished
         )
+        # TorrentAddedEvent
+        # TorrentRemovedEvent
+        # TorrentFinishedEvent
 
         log.info("Starting to poll")
 
@@ -171,6 +180,12 @@ class Core(CorePluginBase):
         self.config.save()
 
         # unregister torrent download finished event listener
+        self.event_manager.deregister_event_handler(
+            'TorrentAddedEvent', self._on_torrent_added
+        )
+        self.event_manager.deregister_event_handler(
+            'TorrentRemovedEvent', self._on_torrent_removed
+        )
         self.event_manager.deregister_event_handler(
             'TorrentFinishedEvent', self._on_torrent_finished
         )
@@ -200,12 +215,20 @@ class Core(CorePluginBase):
     #  Section: Event Handlers
     #########
 
+    def _on_torrent_added(self, torrent_id):
+        """
+        This is called when a torrent is added.
+        """
+
+    def _on_torrent_removed(self, torrent_id):
+        """
+        This is called when a torrent is removed.
+        """
+
     def _on_torrent_finished(self, torrent_id):
         """
-        This is called when a torrent finishes downloading.
+        This is called when a torrent is finished.
         """
-        tid = self.torrent_manager.torrents[torrent_id]
-        tid_status = tid.get_status(['download_location', 'name'])
 
     def tg_on_error(self, update: object, context: CallbackContext) -> None:
         """Log the error and send a telegram message to notify the developer."""
