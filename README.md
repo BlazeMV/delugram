@@ -60,6 +60,7 @@ Use the following Telegram commands to interact with Delugram:
 - ☑️ Status command
 - ☑️ Web UI
 - ☑️ GTK UI
+- ☑️ Access Control
 
 ---
 
