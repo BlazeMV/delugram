@@ -3,15 +3,18 @@ from __future__ import unicode_literals
 import html
 import json
 import traceback
+import urllib
+from base64 import b64encode
 from delugram.logger import log
 import deluge.configmanager
 from deluge import component
-from deluge.common import fsize, ftime, fdate, fpeer, fpcnt, fspeed
+from deluge.common import fsize, ftime, fdate, fpeer, fpcnt, fspeed, is_magnet, is_url
 from deluge.core.rpcserver import export
 from deluge.plugins.pluginbase import CorePluginBase
-from telegram import (Bot, Update, ParseMode, ReplyKeyboardRemove)
+from telegram import (Bot, Update, ParseMode, ReplyKeyboardRemove, ReplyKeyboardMarkup, constants)
 from telegram.ext import (Updater, CommandHandler, CallbackContext, ConversationHandler, MessageHandler, Filters)
 from telegram.utils.request import Request
+
 
 DEFAULT_PREFS = {
     "telegram_token": "Contact @BotFather, create a new bot and get a bot token",
@@ -23,7 +26,7 @@ DEFAULT_PREFS = {
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
                          '(KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36'}
 
-SET_LABEL, TORRENT_TYPE, ADD_MAGNET, ADD_TORRENT, ADD_URL = list(range(5))
+SET_LABEL_STATE, TORRENT_TYPE_STATE, ADD_MAGNET_STATE, ADD_TORRENT_STATE, ADD_URL_STATE = range(5)
 
 EMOJI = {'seeding':     '\u23eb',
          'queued':      '\u23ef',
@@ -69,47 +72,69 @@ class Core(CorePluginBase):
             {
                 'name': 'start',
                 'description': 'Start of the conversation',
-                'handler': CommandHandler('start', self.tg_cmd_help),
+                'handler': CommandHandler('start', self.help_command_handler),
                 'list_in_help': False
             },
             {
                 'name': 'add',
                 'description': 'Add a new torrent',
                 'handler': ConversationHandler(
-                    entry_points=[CommandHandler('add', self.tg_cmd_help)],
+                    entry_points=[CommandHandler('add', self.add_command_handler)],
                     states={
-                        SET_LABEL: [MessageHandler(Filters.text, self.tg_cmd_help)],
-                        TORRENT_TYPE: [MessageHandler(Filters.text, self.tg_cmd_help)],
-                        ADD_MAGNET: [MessageHandler(Filters.text, self.tg_cmd_help)],
-                        ADD_TORRENT: [MessageHandler(Filters.document, self.tg_cmd_help)],
-                        ADD_URL: [MessageHandler(Filters.text, self.tg_cmd_help)]
+                        SET_LABEL_STATE: [
+                            MessageHandler(Filters.text & ~Filters.command, self.set_label_state_handler),
+                            MessageHandler(Filters.all & ~Filters.command, self.invalid_input_handler),
+                        ],
+                        TORRENT_TYPE_STATE: [
+                            MessageHandler(Filters.regex("^Magnet$"), self.torrent_type_state_magnet_handler),
+                            MessageHandler(Filters.regex(r"^\.torrent$"), self.torrent_type_state_torrent_handler),
+                            MessageHandler(Filters.regex("^URL$"), self.torrent_type_state_url_handler),
+                            MessageHandler(Filters.all & ~Filters.command, self.torrent_type_state_unknown_handler),
+                        ],
+                        ADD_MAGNET_STATE: [
+                            MessageHandler(Filters.text & ~Filters.command, self.add_magnet_state_handler),
+                            MessageHandler(Filters.all & ~Filters.command, self.invalid_input_handler),
+                        ],
+                        ADD_TORRENT_STATE: [
+                            MessageHandler(Filters.document, self.add_torrent_state_handler),
+                            MessageHandler(Filters.all & ~Filters.command, self.invalid_input_handler),
+                        ],
+                        ADD_URL_STATE: [
+                            MessageHandler(Filters.text & ~Filters.command, self.add_url_state_handler),
+                            MessageHandler(Filters.all & ~Filters.command, self.invalid_input_handler),
+                        ]
                     },
-                    fallbacks=[CommandHandler('cancel', self.tg_cmd_cancel)]
+                    fallbacks=[
+                        CommandHandler('cancel', self.cancel_command_handler)
+                    ],
+                    # conversation_timeout=120,
                 ),
                 'list_in_help': True
             },
             {
                 'name': 'status',
                 'description': 'Show status of active torrents',
-                'handler': CommandHandler('status', self.tg_cmd_status),
+                'handler': CommandHandler('status', self.status_command_handler),
                 'list_in_help': True
             },
             {
                 'name': 'cancel',
                 'description': 'Cancels the current operation',
-                'handler': CommandHandler('cancel', self.tg_cmd_cancel),
+                'handler': CommandHandler('cancel', self.cancel_command_handler),
                 'list_in_help': True
             },
             {
                 'name': 'help',
                 'description': 'List all available commands',
-                'handler': CommandHandler('help', self.tg_cmd_help),
+                'handler': CommandHandler('help', self.help_command_handler),
                 'list_in_help': True
             }
         ]
 
         self.torrent_manager = component.get("TorrentManager")
         self.event_manager = component.get("EventManager")
+        self.label_plugin = None
+        self.available_labels = self.load_available_labels()
 
         # check if the telegram token is set, if not, no need to go any further
         if self.telegram_token == DEFAULT_PREFS['telegram_token']:
@@ -136,7 +161,7 @@ class Core(CorePluginBase):
         log.info("Starting to poll")
 
         # start polling
-        self.updater.start_polling(poll_interval=1)
+        self.updater.start_polling(poll_interval=1,allowed_updates=[constants.UPDATE_MESSAGE])
 
         log.info("Polling started")
 
@@ -219,35 +244,212 @@ class Core(CorePluginBase):
     #  Section: Telegram Commands
     #########
 
-    def tg_cmd_help(self, update: Update, context: CallbackContext):
+    def help_command_handler(self, update: Update, context: CallbackContext):
         help_msg = [
             f"/{cmd['name']} - {cmd['description']}" for cmd in self.commands if cmd['list_in_help']
         ]
-        context.bot.send_message(
-            chat_id=update.effective_chat.id,
+        update.message.reply_text(
             text='\n'.join(help_msg),
             parse_mode='Markdown',
             # reply_to_message_id=update.message.message_id
         )
 
-    def tg_cmd_status(self, update: Update, context: CallbackContext):
-        context.bot.send_message(
+    def status_command_handler(self, update: Update, context: CallbackContext):
+        update.message.reply_text(
             text= 'No active torrents found',
-            chat_id=update.effective_chat.id,
             parse_mode='Markdown'
             # reply_to_message_id=update.message.message_id
         )
 
-    def tg_cmd_cancel(self, update: Update, context: CallbackContext):
-        context.bot.send_message(
+    def cancel_command_handler(self, update: Update, context: CallbackContext):
+        update.message.reply_text(
             text='Operation cancelled',
-            chat_id=update.effective_chat.id,
             parse_mode='Markdown',
             reply_markup=ReplyKeyboardRemove()
             # reply_to_message_id=update.message.message_id
         )
         return ConversationHandler.END
 
+    def add_command_handler(self, update: Update, context: CallbackContext):
+        # refresh available labels list
+        self.load_available_labels()
+
+        if len(self.available_labels):
+            return self.advance_to_set_label_state(update=update, context=context)
+
+        # if no labels are found, skip the label selection step
+        else:
+            return self.advance_to_torrent_type_state(update=update, context=context)
+
+    def advance_to_set_label_state(self, update: Update, context: CallbackContext):
+        session_msg = context.user_data.pop('message', '')
+        keyboard_options = [[g] for g in self.available_labels]
+
+        update.message.reply_text(
+            text=(f"{session_msg}\n\n" if session_msg else "") + "Select a label",
+            reply_markup=ReplyKeyboardMarkup(keyboard_options, one_time_keyboard=True)
+            # reply_to_message_id=update.message.message_id
+        )
+        return SET_LABEL_STATE
+
+    def set_label_state_handler(self, update: Update, context: CallbackContext):
+        if update.message.text in self.available_labels:
+            context.user_data['label'] = update.message.text
+
+            return self.advance_to_torrent_type_state(update=update, context=context)
+        else:
+            context.user_data['message'] = "Invalid label. Try again"
+            return self.advance_to_set_label_state(update=update, context=context)
+
+    def advance_to_torrent_type_state(self, update: Update, context: CallbackContext):
+        session_msg = context.user_data.pop('message', '')
+        keyboard_options = [['Magnet'], ['.torrent'], ['URL']]
+
+        update.message.reply_text(
+            text=(f"{session_msg}\n\n" if session_msg else "") + "Select type of torrent source",
+            reply_markup=ReplyKeyboardMarkup(keyboard_options, one_time_keyboard=True),
+            # reply_to_message_id=update.message.message_id
+        )
+        return TORRENT_TYPE_STATE
+
+    def torrent_type_state_magnet_handler(self, update: Update, context: CallbackContext):
+        return self.advance_to_add_magnet_state(update=update, context=context)
+
+    def advance_to_add_magnet_state(self, update: Update, context: CallbackContext):
+        session_msg = context.user_data.pop('message', '')
+        update.message.reply_text(
+            text=(f"{session_msg}\n\n" if session_msg else "") + "Send the magnet link",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return ADD_MAGNET_STATE
+
+    def torrent_type_state_torrent_handler(self, update: Update, context: CallbackContext):
+        return self.advance_to_add_torrent_state(update=update, context=context)
+
+    def advance_to_add_torrent_state(self, update: Update, context: CallbackContext):
+        session_msg = context.user_data.pop('message', '')
+        update.message.reply_text(
+            text=(f"{session_msg}\n\n" if session_msg else "") + "Send the torrent file",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return ADD_TORRENT_STATE
+
+    def torrent_type_state_url_handler(self, update: Update, context: CallbackContext):
+        return self.advance_to_add_url_state(update=update, context=context)
+
+    def advance_to_add_url_state(self, update: Update, context: CallbackContext):
+        session_msg = context.user_data.pop('message', '')
+        update.message.reply_text(
+            text=(f"{session_msg}\n\n" if session_msg else "") + "Send the torrent url",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return ADD_URL_STATE
+
+    def torrent_type_state_unknown_handler(self, update: Update, context: CallbackContext):
+        context.user_data['message'] = "Invalid option. Try again"
+        return self.advance_to_torrent_type_state(update=update, context=context)
+
+    def add_magnet_state_handler(self, update: Update, context: CallbackContext):
+        if not is_magnet(update.message.text):
+            context.user_data['message'] = "Invalid magnet link. Try again"
+            return self.advance_to_add_magnet_state(update=update, context=context)
+
+        tid = component.get('Core').add_torrent_magnet(update.message.text, {})
+        self.apply_label(tid=tid, context=context)
+
+        return ConversationHandler.END
+
+    def add_torrent_state_handler(self, update: Update, context: CallbackContext):
+        if update.message.document.mime_type != 'application/x-bittorrent':
+            context.user_data['message'] = "Invalid torrent file. Try again"
+            return self.advance_to_add_torrent_state(update=update, context=context)
+
+        try:
+            # Grab file & add torrent with label
+            file_info = self.bot.getFile(update.message.document.file_id)
+            request = urllib.request.Request(file_info.file_path, headers=HEADERS)
+            status_code = urllib.request.urlopen(request).getcode()
+            if status_code == 200:
+                file_contents = urllib.request.urlopen(request).read()
+                tid = component.get('Core').add_torrent_file(None, b64encode(file_contents), {})
+                self.apply_label(tid, context)
+            else:
+                update.message.reply_text(
+                    text="Failed to download torrent file. terminating operation",
+                    reply_markup=ReplyKeyboardRemove()
+                )
+        except Exception as e:
+            update.message.reply_text(
+                text="Failed to download torrent file. terminating operation",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            log.error(str(e) + '\n' + traceback.format_exc())
+
+        return ConversationHandler.END
+
+    def add_url_state_handler(self, update: Update, context: CallbackContext):
+        if not is_url(update.message.text):
+            context.user_data['message'] = "Invalid URL. Try again"
+            return self.advance_to_add_url_state(update=update, context=context)
+
+        try:
+            # Grab url & add torrent with label
+            request = urllib.request.Request(update.message.text.strip(), headers=HEADERS)
+            status_code = urllib.request.urlopen(request).getcode()
+            if status_code == 200:
+                file_contents = urllib.request.urlopen(request).read()
+                tid = component.get('Core').add_torrent_file(None, b64encode(file_contents), {})
+                self.apply_label(tid, context)
+            else:
+                update.message.reply_text(
+                    text="Failed to download torrent file",
+                    reply_markup=ReplyKeyboardRemove()
+                )
+        except Exception as e:
+            update.message.reply_text(
+                text="Failed to download torrent file",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            log.error(str(e) + '\n' + traceback.format_exc())
+
+        return ConversationHandler.END
+
+    def invalid_input_handler(self, update: Update, context: CallbackContext):
+        update.message.reply_text(
+            text="Invalid input. Terminating operation",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return ConversationHandler.END
+
     #########
     #  Section: Helpers
     #########
+
+    def load_available_labels(self):
+        self.available_labels = []
+        try:
+            self.label_plugin = component.get('CorePlugin.Label')
+
+            if self.label_plugin:
+                for g in self.label_plugin.get_labels():
+                    self.available_labels.append(g)
+
+            # available_labels.append("No Label")
+
+        except Exception as e:
+            log.error(str(e) + '\n' + traceback.format_exc())
+
+        return self.available_labels
+
+    def apply_label(self, tid, context: CallbackContext):
+        try:
+            self.load_available_labels()
+            label = context.user_data.pop('label', None)
+
+            if label is not None and label != "No Label" and self.label_plugin and label in self.available_labels:
+                self.label_plugin.set_torrent(tid, label.lower())
+                return True
+            return False
+        except Exception as e:
+            log.error(str(e) + '\n' + traceback.format_exc())
+            return False
