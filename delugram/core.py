@@ -2,9 +2,14 @@ from __future__ import unicode_literals
 
 import html
 import json
+import time
 import traceback
 import urllib
 from base64 import b64encode
+
+from twisted.internet.defer import inlineCallbacks
+
+from delugram.include.twisted.python.test.deprecatedattributes import message
 from delugram.logger import log
 import deluge.configmanager
 from deluge import component
@@ -20,7 +25,7 @@ DEFAULT_PREFS = {
     "telegram_token": "Contact @BotFather, create a new bot and get a bot token",
     "admin_chat_id": "Telegram chat id of the administrator. Use @userinfobot to get the chat id",
     "users": [],
-    "active_torrents": {},
+    "user_torrents": {},
 }
 
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
@@ -60,14 +65,11 @@ INFOS = [i[0] for i in INFO_DICT]
 class Core(CorePluginBase):
 
     def enable(self):
+        self.core = component.get('Core')
         self.config = deluge.configmanager.ConfigManager(
             'delugram.conf', DEFAULT_PREFS)
 
         # hydrate
-        self.telegram_token = self.config['telegram_token']
-        self.admin_chat_id = self.config['admin_chat_id']
-        self.users = self.config['users']
-        self.active_torrents = self.config['active_torrents']
         self.commands = [
             {
                 'name': 'start',
@@ -135,13 +137,14 @@ class Core(CorePluginBase):
         self.event_manager = component.get("EventManager")
         self.label_plugin = None
         self.available_labels = self.load_available_labels()
+        self.cleanup_user_torrents()
 
         # check if the telegram token is set, if not, no need to go any further
-        if self.telegram_token == DEFAULT_PREFS['telegram_token']:
+        if self.config['telegram_token'] == DEFAULT_PREFS['telegram_token']:
             return
 
         # initialize telegram bot
-        self.bot = Bot(self.telegram_token, request=Request(con_pool_size=8))
+        self.bot = Bot(self.config['telegram_token'], request=Request(con_pool_size=8))
         self.updater = Updater(bot=self.bot, use_context=True)
         self.dispatcher = self.updater.dispatcher
 
@@ -212,28 +215,67 @@ class Core(CorePluginBase):
     #  Section: Event Handlers
     #########
 
-    def _on_torrent_added(self, torrent_id):
+    def _on_torrent_added(self, torrent_id, from_state=False):
         """
         This is called when a torrent is added.
         """
+
+        torrent = self.torrent_manager[torrent_id]
+        if not torrent:
+            return
+
+        owner = self.get_torrent_user(torrent_id)
+        if not owner:
+            return
+
+        torrent_status = torrent.get_status(['name'])
+
+        # torrent_added = torrent.get_status(['time_added'])
+        # check if torrent_added time is in the last 5 minutes
+        # if it is, send the message
+        # if it is not, do not send the message
+        # this is to prevent the bot from sending a message when the bot is restarted
+        # and all the torrents are added
+        # this is a hacky way to do it, but it works
+        # if the torrent was added more than 5 minutes ago, do not send the message
+        # if torrent_added["time_added"] < (time.time() - 300):
+        #     return
+
+        log.debug(f'Owner: {owner}, Torrent: {torrent}, User torrents: {self.config["user_torrents"]}')
+
+        message = "Torrent added: *%s*" % html.escape(torrent_status['name'])
+        self.bot.send_message(chat_id=owner, text=message, parse_mode=ParseMode.HTML)
 
     def _on_torrent_removed(self, torrent_id):
         """
         This is called when a torrent is removed.
         """
-        self.deregister_torrent(torrent_id)
+        self.cleanup_user_torrents()
 
     def _on_torrent_finished(self, torrent_id):
         """
         This is called when a torrent is finished.
         """
 
+        torrent = self.torrent_manager[torrent_id]
+        if not torrent:
+            return
+
+        owner = self.get_torrent_user(torrent_id)
+        if not owner:
+            return
+
+        torrent_status = torrent.get_status(['name'])
+
+        message = "Torrent finished: *%s*" % html.escape(torrent_status['name'])
+        self.bot.send_message(chat_id=owner, text=message, parse_mode=ParseMode.HTML)
+
     def tg_on_error(self, update: object, context: CallbackContext) -> None:
         """Log the error and send a telegram message to notify the developer."""
         # Log the error before we do anything else, so we can see it even if something breaks.
         log.error("Exception while handling an update:", exc_info=context.error)
 
-        if not self.admin_chat_id:
+        if not self.config['admin_chat_id']:
             return
 
         # traceback.format_exception returns the usual python message about an exception, but as a
@@ -266,7 +308,7 @@ class Core(CorePluginBase):
 
         # Finally, send the message
         context.bot.send_message(
-            chat_id=self.admin_chat_id, text=message, parse_mode=ParseMode.HTML
+            chat_id=self.config['admin_chat_id'], text=message, parse_mode=ParseMode.HTML
         )
 
         #notify original user of the error
@@ -291,8 +333,13 @@ class Core(CorePluginBase):
         )
 
     def status_command_handler(self, update: Update, context: CallbackContext):
+        message = self.list_torrents(lambda t:
+                               t.get_status(('state',))['state'] in
+                               ('Active', 'Downloading', 'Seeding',
+                                'Paused', 'Checking', 'Error', 'Queued'))
+
         update.message.reply_text(
-            text= 'No active torrents found',
+            text=message,
             parse_mode='Markdown'
             # reply_to_message_id=update.message.message_id
         )
@@ -391,9 +438,11 @@ class Core(CorePluginBase):
             return self.advance_to_add_magnet_state(update=update, context=context)
 
         try:
-            tid = component.get('Core').add_torrent_magnet(update.message.text, {})
+            tid = self.core.add_torrent_magnet(update.message.text, {})
             self.apply_label(tid=tid, context=context)
-            self.register_torrent_owner(tid, update.effective_chat.id)
+            self.add_torrent_for_user(user_id=update.effective_chat.id, torrent_id=tid)
+            self._on_torrent_added(torrent_id=tid)
+            return ConversationHandler.END
 
         except Exception as e:
             update.message.reply_text(
@@ -416,9 +465,12 @@ class Core(CorePluginBase):
             status_code = urllib.request.urlopen(request).getcode()
             if status_code == 200:
                 file_contents = urllib.request.urlopen(request).read()
-                tid = component.get('Core').add_torrent_file(None, b64encode(file_contents), {})
+                tid = self.core.add_torrent_file(None, b64encode(file_contents), {})
                 self.apply_label(tid, context)
-                self.register_torrent_owner(tid, update.effective_chat.id)
+                self.add_torrent_for_user(user_id=update.effective_chat.id, torrent_id=tid)
+                self._on_torrent_added(torrent_id=tid)
+                return ConversationHandler.END
+
             else:
                 update.message.reply_text(
                     text="Failed to download torrent file. terminating operation",
@@ -444,9 +496,12 @@ class Core(CorePluginBase):
             status_code = urllib.request.urlopen(request).getcode()
             if status_code == 200:
                 file_contents = urllib.request.urlopen(request).read()
-                tid = component.get('Core').add_torrent_file(None, b64encode(file_contents), {})
+                tid = self.core.add_torrent_file(None, b64encode(file_contents), {})
                 self.apply_label(tid, context)
-                self.register_torrent_owner(tid, update.effective_chat.id)
+                self.add_torrent_for_user(user_id=update.effective_chat.id, torrent_id=tid)
+                self._on_torrent_added(torrent_id=tid)
+                return ConversationHandler.END
+
             else:
                 update.message.reply_text(
                     text="Failed to download torrent file",
@@ -501,15 +556,69 @@ class Core(CorePluginBase):
             log.error(str(e) + '\n' + traceback.format_exc())
             return False
 
-    def register_torrent_owner(self, tid, chat_id):
-        if chat_id not in self.active_torrents:
-            self.active_torrents[chat_id] = []
+    def add_torrent_for_user(self, user_id, torrent_id):
+        if user_id not in self.config['user_torrents']:
+            self.config['user_torrents'][user_id] = []
 
-        if tid not in self.active_torrents[chat_id]:
-            self.active_torrents[chat_id].append(tid)
+        if torrent_id not in self.config['user_torrents'][user_id]:
+            self.config['user_torrents'][user_id].append(torrent_id)
+            self.config.save()
 
-    def deregister_torrent(self, tid):
-        for chat_id in self.active_torrents:
-            if tid in self.active_torrents[chat_id]:
-                self.active_torrents[chat_id].remove(tid)
+        log.info(f'User torrents: {self.config["user_torrents"]}')
 
+    def remove_torrent_for_user(self, torrent_id):
+        for user_id, torrents in self.config['user_torrents'].items():
+            if torrent_id in torrents:
+                torrents.remove(torrent_id)
+                if not torrents:  # Clean up empty lists
+                    del self.config['user_torrents'][user_id]
+                self.config.save()
+                break
+
+    @inlineCallbacks
+    def cleanup_user_torrents(self):
+        """
+        Removes torrent IDs from user_torrents mapping if they no longer exist in Deluge.
+        """
+        # Get active torrents from Deluge (asynchronous call)
+        result = yield self.core.get_torrents_status({}, ['hash'])
+
+        if isinstance(result, dict):
+            active_torrents = set(result.keys())
+
+            # Cleanup mapping
+            updated = False
+            for user_id, torrents in list(self.config['user_torrents'].items()):
+                self.config['user_torrents'][user_id] = [
+                    tid for tid in torrents if tid in active_torrents
+                ]
+                if not self.config['user_torrents'][user_id]:  # Remove empty entries
+                    del self.config['user_torrents'][user_id]
+                updated = True
+
+            if updated:
+                self.config.save()
+
+    def get_torrent_user(self, torrent_id):
+        for user_id in self.config['user_torrents']:
+            if torrent_id in self.config['user_torrents'][user_id]:
+                return user_id
+        return None
+
+    def list_torrents(self, filter_func):
+        selected_torrents = []
+        torrents = list(self.torrent_manager.torrents.values())
+        for t in torrents:
+            if filter_func(t):
+                selected_torrents.append(self.format_torrent_info(t))
+        if len(selected_torrents) == 0:
+            return "No active torrents found"
+        return "\n".join(selected_torrents)
+
+    def format_torrent_info(self, torrent):
+        try:
+            status = torrent.get_status(INFOS)
+            status_string = ''.join([f(status[i], status) for i, f in INFO_DICT if f is not None])
+        except Exception as e:
+            status_string = ''
+        return status_string
