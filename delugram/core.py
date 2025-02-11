@@ -613,7 +613,7 @@ class Core(CorePluginBase):
                 selected_torrents.append(self.format_torrent_info(t))
         if len(selected_torrents) == 0:
             return "No active torrents found"
-        return "\n".join(selected_torrents)
+        return "\n\n".join(selected_torrents)
 
     def format_torrent_info(self, torrent):
         try:
