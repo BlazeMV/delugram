@@ -478,9 +478,9 @@ class Core(CorePluginBase):
             return False
 
     def register_torrent_owner(self, tid, chat_id):
-        if tid not in self.active_torrents:
-            self.active_torrents[tid] = []
+        if chat_id not in self.active_torrents:
+            self.active_torrents[chat_id] = []
 
         if chat_id not in self.active_torrents[tid]:
-            self.active_torrents[tid].append(chat_id)
+            self.active_torrents[chat_id].append(tid)
 
