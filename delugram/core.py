@@ -11,7 +11,7 @@ from deluge import component
 from deluge.common import fsize, ftime, fdate, fpeer, fpcnt, fspeed, is_magnet, is_url
 from deluge.core.rpcserver import export
 from deluge.plugins.pluginbase import CorePluginBase
-from telegram import (Bot, Update, ParseMode, ReplyKeyboardRemove, ReplyKeyboardMarkup, constants)
+from telegram import (Bot, Update, ParseMode, ReplyKeyboardRemove, ReplyKeyboardMarkup)
 from telegram.ext import (Updater, CommandHandler, CallbackContext, ConversationHandler, MessageHandler, Filters)
 from telegram.utils.request import Request
 
@@ -20,7 +20,7 @@ DEFAULT_PREFS = {
     "telegram_token": "Contact @BotFather, create a new bot and get a bot token",
     "admin_chat_id": "Telegram chat id of the administrator. Use @userinfobot to get the chat id",
     "users": [],
-    "active_torrents": [],
+    "active_torrents": {},
 }
 
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
@@ -163,14 +163,11 @@ class Core(CorePluginBase):
         self.event_manager.register_event_handler(
             'TorrentFinishedEvent', self._on_torrent_finished
         )
-        # TorrentAddedEvent
-        # TorrentRemovedEvent
-        # TorrentFinishedEvent
 
         log.info("Starting to poll")
 
         # start polling
-        self.updater.start_polling(poll_interval=1,allowed_updates=[constants.UPDATE_MESSAGE])
+        self.updater.start_polling(poll_interval=1,allowed_updates=[Update.MESSAGE])
 
         log.info("Polling started")
 
@@ -379,6 +376,7 @@ class Core(CorePluginBase):
 
         tid = component.get('Core').add_torrent_magnet(update.message.text, {})
         self.apply_label(tid=tid, context=context)
+        self.register_torrent_owner(tid, update.effective_chat.id)
 
         return ConversationHandler.END
 
@@ -396,6 +394,7 @@ class Core(CorePluginBase):
                 file_contents = urllib.request.urlopen(request).read()
                 tid = component.get('Core').add_torrent_file(None, b64encode(file_contents), {})
                 self.apply_label(tid, context)
+                self.register_torrent_owner(tid, update.effective_chat.id)
             else:
                 update.message.reply_text(
                     text="Failed to download torrent file. terminating operation",
@@ -423,6 +422,7 @@ class Core(CorePluginBase):
                 file_contents = urllib.request.urlopen(request).read()
                 tid = component.get('Core').add_torrent_file(None, b64encode(file_contents), {})
                 self.apply_label(tid, context)
+                self.register_torrent_owner(tid, update.effective_chat.id)
             else:
                 update.message.reply_text(
                     text="Failed to download torrent file",
@@ -476,3 +476,11 @@ class Core(CorePluginBase):
         except Exception as e:
             log.error(str(e) + '\n' + traceback.format_exc())
             return False
+
+    def register_torrent_owner(self, tid, chat_id):
+        if tid not in self.active_torrents:
+            self.active_torrents[tid] = []
+
+        if chat_id not in self.active_torrents[tid]:
+            self.active_torrents[tid].append(chat_id)
+
