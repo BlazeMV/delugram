@@ -241,24 +241,39 @@ class Core(CorePluginBase):
         tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
         tb_string = "".join(tb_list)
 
-        # Build the message with some markup and additional information about what happened.
+        # prep the update, chat_data, and user_data for display
         update_str = update.to_dict() if isinstance(update, Update) else str(update)
+        update_str = html.escape(json.dumps(update_str, indent=2, ensure_ascii=False))
+        chat_data = html.escape(str(context.chat_data))
+        user_data = html.escape(str(context.user_data))
+
+        # length of the message should not exceed 4096 characters
+        if len(tb_string) + len(update_str) + len(chat_data) + len(user_data) > 3800:
+            tb_string = html.escape(str(context.error))
+
+            if len(tb_string) + len(update_str) + len(chat_data) + len(user_data) > 3800:
+                tb_string = 'See Logs for trace'
+
+        # Build the message with some markup and additional information about what happened.
         message = (
             "An exception was raised while handling an update\n"
-            f"<pre>update = {html.escape(json.dumps(update_str, indent=2, ensure_ascii=False))}"
+            f"<pre>update = {update_str}"
             "</pre>\n\n"
-            f"<pre>context.chat_data = {html.escape(str(context.chat_data))}</pre>\n\n"
-            f"<pre>context.user_data = {html.escape(str(context.user_data))}</pre>\n\n"
-            f"<pre>{html.escape(tb_string)}</pre>"
+            f"<pre>context.chat_data = {chat_data}</pre>\n\n"
+            f"<pre>context.user_data = {user_data}</pre>\n\n"
+            f"<pre>{tb_string}</pre>"
         )
-
-        #deal with the message length > 4000 (4090 is the limit)
-        if len(message) > 4000:
-            message = message[:4000] + '...'
 
         # Finally, send the message
         context.bot.send_message(
             chat_id=self.admin_chat_id, text=message, parse_mode=ParseMode.HTML
+        )
+
+        #notify original user of the error
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="An error occurred. Administrator has been notified.",
+            reply_markup=ReplyKeyboardRemove()
         )
 
     #########
@@ -482,7 +497,7 @@ class Core(CorePluginBase):
         if chat_id not in self.active_torrents:
             self.active_torrents[chat_id] = []
 
-        if chat_id not in self.active_torrents[tid]:
+        if tid not in self.active_torrents[chat_id]:
             self.active_torrents[chat_id].append(tid)
 
     def deregister_torrent(self, tid):
