@@ -390,9 +390,17 @@ class Core(CorePluginBase):
             context.user_data['message'] = "Invalid magnet link. Try again"
             return self.advance_to_add_magnet_state(update=update, context=context)
 
-        tid = component.get('Core').add_torrent_magnet(update.message.text, {})
-        self.apply_label(tid=tid, context=context)
-        self.register_torrent_owner(tid, update.effective_chat.id)
+        try:
+            tid = component.get('Core').add_torrent_magnet(update.message.text, {})
+            self.apply_label(tid=tid, context=context)
+            self.register_torrent_owner(tid, update.effective_chat.id)
+
+        except Exception as e:
+            update.message.reply_text(
+                text="Failed to add magnet link",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            log.error(str(e) + '\n' + traceback.format_exc())
 
         return ConversationHandler.END
 
