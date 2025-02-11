@@ -461,7 +461,7 @@ class Core(CorePluginBase):
             # available_labels.append("No Label")
 
         except Exception as e:
-            log.error(str(e) + '\n' + traceback.format_exc())
+            log.error("Label plugin not found. Delugram will continue without labels")
 
         return self.available_labels
 
