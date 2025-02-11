@@ -221,6 +221,7 @@ class Core(CorePluginBase):
         """
         This is called when a torrent is removed.
         """
+        self.deregister_torrent(torrent_id)
 
     def _on_torrent_finished(self, torrent_id):
         """
@@ -483,4 +484,9 @@ class Core(CorePluginBase):
 
         if chat_id not in self.active_torrents[tid]:
             self.active_torrents[chat_id].append(tid)
+
+    def deregister_torrent(self, tid):
+        for chat_id in self.active_torrents:
+            if tid in self.active_torrents[chat_id]:
+                self.active_torrents[chat_id].remove(tid)
 
