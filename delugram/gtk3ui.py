@@ -1,7 +1,6 @@
 from __future__ import unicode_literals
 
 import logging
-
 from gi.repository import Gtk
 
 import deluge.component as component
@@ -33,15 +32,37 @@ class Gtk3UI(Gtk3PluginBase):
             'on_show_prefs', self.on_show_prefs)
 
     def on_apply_prefs(self):
-        log.debug('applying prefs for delugram')
+        log.debug('Applying preferences for Delugram')
+
         config = {
-            'test': self.builder.get_object('txt_test').get_text()
+            'telegram_token': self.builder.get_object('entry_telegram_token').get_text(),
+            'admin_chat_id': int(self.builder.get_object('entry_admin_chat_id').get_text()),
+            'users': self.get_users_list()
         }
+
         client.delugram.set_config(config)
 
     def on_show_prefs(self):
         client.delugram.get_config().addCallback(self.cb_get_config)
 
     def cb_get_config(self, config):
-        """callback for on show_prefs"""
-        self.builder.get_object('txt_test').set_text(config['test'])
+        """Callback for loading configuration into the UI"""
+        self.builder.get_object('entry_telegram_token').set_text(config.get('telegram_token', ''))
+        self.builder.get_object('entry_admin_chat_id').set_text(str(config.get('admin_chat_id', '')))
+
+        self.populate_users_list(config.get('users', []))
+
+    def populate_users_list(self, users):
+        """Populate the users list in the UI"""
+        user_liststore = self.builder.get_object('liststore_users')
+        user_liststore.clear()
+        for user in users:
+            user_liststore.append([user['chat_id'], user['name']])
+
+    def get_users_list(self):
+        """Retrieve users from the UI and return them as a list of dictionaries"""
+        user_liststore = self.builder.get_object('liststore_users')
+        users = []
+        for row in user_liststore:
+            users.append({"chat_id": row[0], "name": row[1]})
+        return users
