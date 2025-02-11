@@ -54,10 +54,10 @@ Use the following Telegram commands to interact with Delugram:
 - ✅ Integrate python-telegram-bot
 - ✅ Polling for telegram updates
 - ✅ Bot response to all commands
-- ☑️ Maintain torrent owner
-- ☑️ Torrent added notification
-- ☑️ Torrent download completed notification
-- ☑️ Status command
+- ✅️ Maintain torrent owner
+- ✅️ Torrent added notification
+- ✅️ Torrent download completed notification
+- ✅️ Status command
 - ☑️ Web UI
 - ☑️ GTK UI
 - ☑️ Access Control
