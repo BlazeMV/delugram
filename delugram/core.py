@@ -345,10 +345,12 @@ class Core(CorePluginBase):
         )
 
     def status_command_handler(self, update: Update, context: CallbackContext):
+        chat_torrents = self.config['chat_torrents'].get(update.effective_chat.id, [])
         message = self.list_torrents(lambda t:
                                t.get_status(('state',))['state'] in
                                ('Active', 'Downloading', 'Seeding',
-                                'Paused', 'Checking', 'Error', 'Queued'))
+                                'Paused', 'Checking', 'Error', 'Queued'
+                                ) and t.torrent_id in chat_torrents)
 
         update.message.reply_text(
             text=message,
