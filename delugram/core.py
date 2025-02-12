@@ -7,8 +7,6 @@ import traceback
 import urllib
 from base64 import b64encode
 
-from twisted.internet.defer import inlineCallbacks
-
 from delugram.logger import log
 import deluge.configmanager
 from deluge import component
@@ -41,9 +39,9 @@ EMOJI = {'seeding':     '\u23eb',
 
 INFO_DICT = (('queue', lambda i, s: i != -1 and str(i) or '#'),
              ('state', None),
-             ('name', lambda i, s: ' %s *%s* ' %
+             ('name', lambda i, s: ' %s %s\n*%s* ' %
               (s['state'] if s['state'].lower() not in EMOJI
-               else EMOJI[s['state'].lower()],
+               else EMOJI[s['state'].lower()], s['state'],
                i)),
              ('total_wanted', lambda i, s: '(%s) ' % fsize(i)),
              ('progress', lambda i, s: '%s\n' % fpcnt(i/100)),
@@ -137,7 +135,6 @@ class Core(CorePluginBase):
         self.event_manager = component.get("EventManager")
         self.label_plugin = None
         self.available_labels = self.load_available_labels()
-        self.cleanup_chat_torrents()
 
         # check if the telegram token is set, if not, no need to go any further
         if self.config['telegram_token'] == DEFAULT_PREFS['telegram_token']:
@@ -243,6 +240,9 @@ class Core(CorePluginBase):
         This is called when a torrent is added.
         """
 
+        # clean up existing torrents
+        self.cleanup_chat_torrents()
+
         torrent = self.torrent_manager[torrent_id]
         if not torrent:
             return
@@ -345,12 +345,12 @@ class Core(CorePluginBase):
         )
 
     def status_command_handler(self, update: Update, context: CallbackContext):
-        chat_torrents = self.config['chat_torrents'].get(update.effective_chat.id, [])
+        chat_torrents = self.config['chat_torrents'].get(str(update.effective_chat.id), [])
         message = self.list_torrents(lambda t:
                                t.get_status(('state',))['state'] in
                                ('Active', 'Downloading', 'Seeding',
                                 'Paused', 'Checking', 'Error', 'Queued'
-                                ) and t.torrent_id in chat_torrents)
+                                ) and str(t.torrent_id) in chat_torrents)
 
         update.message.reply_text(
             text=message,
@@ -454,7 +454,7 @@ class Core(CorePluginBase):
         try:
             tid = self.core.add_torrent_magnet(update.message.text, {})
             self.apply_label(tid=tid, context=context)
-            self.add_torrent_for_chat(chat_id=update.effective_chat.id, torrent_id=tid)
+            self.add_torrent_for_chat(chat_id=update.effective_chat.id, torrent_id=str(tid))
             self._on_torrent_added(torrent_id=tid)
             return ConversationHandler.END
 
@@ -481,7 +481,7 @@ class Core(CorePluginBase):
                 file_contents = urllib.request.urlopen(request).read()
                 tid = self.core.add_torrent_file(None, b64encode(file_contents), {})
                 self.apply_label(tid, context)
-                self.add_torrent_for_chat(chat_id=update.effective_chat.id, torrent_id=tid)
+                self.add_torrent_for_chat(chat_id=update.effective_chat.id, torrent_id=str(tid))
                 self._on_torrent_added(torrent_id=tid)
                 return ConversationHandler.END
 
@@ -512,7 +512,7 @@ class Core(CorePluginBase):
                 file_contents = urllib.request.urlopen(request).read()
                 tid = self.core.add_torrent_file(None, b64encode(file_contents), {})
                 self.apply_label(tid, context)
-                self.add_torrent_for_chat(chat_id=update.effective_chat.id, torrent_id=tid)
+                self.add_torrent_for_chat(chat_id=update.effective_chat.id, torrent_id=str(tid))
                 self._on_torrent_added(torrent_id=tid)
                 return ConversationHandler.END
 
@@ -578,6 +578,9 @@ class Core(CorePluginBase):
             return False
 
     def add_torrent_for_chat(self, chat_id, torrent_id):
+        chat_id = str(chat_id)
+        torrent_id = str(torrent_id)
+
         if chat_id not in self.config['chat_torrents']:
             self.config['chat_torrents'][chat_id] = []
 
@@ -585,9 +588,9 @@ class Core(CorePluginBase):
             self.config['chat_torrents'][chat_id].append(torrent_id)
             self.config.save()
 
-        log.info(f'Chat torrents: {self.config["chat_torrents"]}')
-
     def remove_torrent_for_chat(self, torrent_id):
+        torrent_id = str(torrent_id)
+
         for chat_id, torrents in self.config['chat_torrents'].items():
             if torrent_id in torrents:
                 torrents.remove(torrent_id)
@@ -596,33 +599,27 @@ class Core(CorePluginBase):
                 self.config.save()
                 break
 
-    @inlineCallbacks
     def cleanup_chat_torrents(self):
         """
         Removes torrent IDs from chat_torrents mapping if they no longer exist in Deluge.
         """
-        # Get active torrents from Deluge (asynchronous call)
-        result = yield self.core.get_torrents_status({}, ['hash'])
+        # Get active torrents from Deluge
+        torrents = list(str(t) for t in self.torrent_manager.torrents.keys())
 
-        if isinstance(result, dict):
-            active_torrents = set(result.keys())
+        if isinstance(torrents, list):
+            # Iterate over chat_ids and remove any matching torrent_id from the list
+            for chat_id in list(self.config['chat_torrents'].keys()):
+                # Remove all non-matching torrent IDs
+                for torrent_id in self.config['chat_torrents'][chat_id]:
+                    if not torrent_id in torrents:
+                        # self.config['chat_torrents'][chat_id].remove(torrent_id)
+                        pass
 
-            # Cleanup mapping
-            updated = False
-            for chat_id, torrents in list(self.config['chat_torrents'].items()):
-                self.config['chat_torrents'][chat_id] = [
-                    tid for tid in torrents if tid in active_torrents
-                ]
-                if not self.config['chat_torrents'][chat_id]:  # Remove empty entries
-                    del self.config['chat_torrents'][chat_id]
-                updated = True
-
-            if updated:
-                self.config.save()
+            # self.config.save()
 
     def get_torrent_chat(self, torrent_id):
         for chat_id in self.config['chat_torrents']:
-            if torrent_id in self.config['chat_torrents'][chat_id]:
+            if str(torrent_id) in self.config['chat_torrents'][chat_id]:
                 return chat_id
         return None
 
