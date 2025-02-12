@@ -243,6 +243,9 @@ class Core(CorePluginBase):
         # clean up existing torrents
         self.cleanup_chat_torrents()
 
+        if from_state:
+            return
+
         torrent = self.torrent_manager[torrent_id]
         if not torrent:
             return
@@ -455,7 +458,6 @@ class Core(CorePluginBase):
             tid = self.core.add_torrent_magnet(update.message.text, {})
             self.apply_label(tid=tid, context=context)
             self.add_torrent_for_chat(chat_id=update.effective_chat.id, torrent_id=str(tid))
-            self._on_torrent_added(torrent_id=tid)
             return ConversationHandler.END
 
         except Exception as e:
@@ -482,7 +484,6 @@ class Core(CorePluginBase):
                 tid = self.core.add_torrent_file(None, b64encode(file_contents), {})
                 self.apply_label(tid, context)
                 self.add_torrent_for_chat(chat_id=update.effective_chat.id, torrent_id=str(tid))
-                self._on_torrent_added(torrent_id=tid)
                 return ConversationHandler.END
 
             else:
@@ -513,7 +514,6 @@ class Core(CorePluginBase):
                 tid = self.core.add_torrent_file(None, b64encode(file_contents), {})
                 self.apply_label(tid, context)
                 self.add_torrent_for_chat(chat_id=update.effective_chat.id, torrent_id=str(tid))
-                self._on_torrent_added(torrent_id=tid)
                 return ConversationHandler.END
 
             else:
