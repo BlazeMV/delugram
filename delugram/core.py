@@ -16,7 +16,8 @@ from deluge.common import fsize, ftime, fdate, fpeer, fpcnt, fspeed, is_magnet, 
 from deluge.core.rpcserver import export
 from deluge.plugins.pluginbase import CorePluginBase
 from telegram import (Bot, Update, ParseMode, ReplyKeyboardRemove, ReplyKeyboardMarkup)
-from telegram.ext import (Updater, CommandHandler, CallbackContext, ConversationHandler, MessageHandler, Filters)
+from telegram.ext import (Updater, CommandHandler, CallbackContext, ConversationHandler, MessageHandler, Filters,
+                          DispatcherHandlerStop)
 from telegram.utils.request import Request
 
 
@@ -147,10 +148,12 @@ class Core(CorePluginBase):
         self.updater = Updater(bot=self.bot, use_context=True)
         self.dispatcher = self.updater.dispatcher
 
+        # register tg middleware
+        self.dispatcher.add_handler(MessageHandler(Filters.all, self.tg_middleware), group=0)
+
         # register command handlers to telegram
         for cmd in self.commands:
-            self.dispatcher.add_handler(cmd['handler'])
-        # self.dp.add_handler(CommandHandler('help', self.tg_cmd_help))
+            self.dispatcher.add_handler(cmd['handler'], group=1)
 
         # register error handlers to telegram
         self.dispatcher.add_error_handler(self.tg_on_error)
@@ -209,6 +212,7 @@ class Core(CorePluginBase):
         for key in config:
             self.config[key] = config[key]
         self.config.save()
+        self.enable()
 
     @export
     def get_config(self):
@@ -225,7 +229,7 @@ class Core(CorePluginBase):
 
     @export
     def remove_chat(self, chat_id):
-        self.config['chat_id'] = [item for item in self.config['chats'] if item["chat_id"] != chat_id]
+        self.config['chats'] = [item for item in self.config['chats'] if item["chat_id"] != chat_id]
         self.config.save()
         return True
 
@@ -248,17 +252,6 @@ class Core(CorePluginBase):
             return
 
         torrent_status = torrent.get_status(['name'])
-
-        # torrent_added = torrent.get_status(['time_added'])
-        # check if torrent_added time is in the last 5 minutes
-        # if it is, send the message
-        # if it is not, do not send the message
-        # this is to prevent the bot from sending a message when the bot is restarted
-        # and all the torrents are added
-        # this is a hacky way to do it, but it works
-        # if the torrent was added more than 5 minutes ago, do not send the message
-        # if torrent_added["time_added"] < (time.time() - 300):
-        #     return
 
         log.debug(f'Owner: {owner}, Torrent: {torrent}, Chat torrents: {self.config["chat_torrents"]}')
 
@@ -542,6 +535,13 @@ class Core(CorePluginBase):
         )
         return ConversationHandler.END
 
+    def tg_middleware(self, update: Update, context: CallbackContext):
+        if not self.chat_is_permitted(update.effective_chat.id):
+            if update.message and update.message.text and update.message.text == '/start':
+                update.message.reply_text(text="Unauthorized\nChat ID: %s" % update.effective_chat.id)
+
+            raise DispatcherHandlerStop()
+
     #########
     #  Section: Helpers
     #########
@@ -641,3 +641,6 @@ class Core(CorePluginBase):
         except Exception as e:
             status_string = ''
         return status_string
+
+    def chat_is_permitted(self, chat_id):
+        return str(chat_id) in [item["chat_id"] for item in self.config['chats']]
