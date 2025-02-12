@@ -58,9 +58,9 @@ Use the following Telegram commands to interact with Delugram:
 - ✅️ Torrent added notification
 - ✅️ Torrent download completed notification
 - ✅️ Status command
-- ☑️ Web UI
-- ☑️ GTK UI
+- ✅️ Web UI
 - ☑️ Access Control
+- ☑️ GTK UI
 
 ---
 

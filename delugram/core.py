@@ -9,7 +9,6 @@ from base64 import b64encode
 
 from twisted.internet.defer import inlineCallbacks
 
-from delugram.include.twisted.python.test.deprecatedattributes import message
 from delugram.logger import log
 import deluge.configmanager
 from deluge import component
@@ -199,6 +198,11 @@ class Core(CorePluginBase):
     def update(self):
         pass
 
+
+    #########
+    #  Section: RPC Methods
+    #########
+
     @export
     def set_config(self, config):
         """Sets the config dictionary"""
@@ -210,6 +214,22 @@ class Core(CorePluginBase):
     def get_config(self):
         """Returns the config dictionary"""
         return self.config.config
+
+    @export
+    def add_user(self, user_id, name):
+        # self.config['users'] = [{"user_id":"user_id_1", "name":"name_1"},{"user_id":"user_id_2", "name":"name_2"}]
+        if next((item for item in self.config['users'] if item["user_id"] == user_id), None) is None:
+            self.config['users'].append({"user_id": user_id, "name": name})
+            self.config.save()
+            return True
+        return False
+
+    @export
+    def remove_user(self, user_id):
+        self.config['users'] = [item for item in self.config['users'] if item["user_id"] != user_id]
+        self.config.save()
+        return True
+
 
     #########
     #  Section: Event Handlers
