@@ -23,8 +23,8 @@ from telegram.utils.request import Request
 DEFAULT_PREFS = {
     "telegram_token": "Contact @BotFather, create a new bot and get a bot token",
     "admin_chat_id": "Telegram chat id of the administrator. Use @userinfobot to get the chat id",
-    "users": [],
-    "user_torrents": {},
+    "chats": [],
+    "chat_torrents": {},
 }
 
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
@@ -136,7 +136,7 @@ class Core(CorePluginBase):
         self.event_manager = component.get("EventManager")
         self.label_plugin = None
         self.available_labels = self.load_available_labels()
-        self.cleanup_user_torrents()
+        self.cleanup_chat_torrents()
 
         # check if the telegram token is set, if not, no need to go any further
         if self.config['telegram_token'] == DEFAULT_PREFS['telegram_token']:
@@ -216,17 +216,16 @@ class Core(CorePluginBase):
         return self.config.config
 
     @export
-    def add_user(self, user_id, name):
-        # self.config['users'] = [{"user_id":"user_id_1", "name":"name_1"},{"user_id":"user_id_2", "name":"name_2"}]
-        if next((item for item in self.config['users'] if item["user_id"] == user_id), None) is None:
-            self.config['users'].append({"user_id": user_id, "name": name})
+    def add_chat(self, chat_id, name):
+        if next((item for item in self.config['chats'] if item["chat_id"] == chat_id), None) is None:
+            self.config['chats'].append({"chat_id": chat_id, "name": name})
             self.config.save()
             return True
         return False
 
     @export
-    def remove_user(self, user_id):
-        self.config['users'] = [item for item in self.config['users'] if item["user_id"] != user_id]
+    def remove_chat(self, chat_id):
+        self.config['chat_id'] = [item for item in self.config['chats'] if item["chat_id"] != chat_id]
         self.config.save()
         return True
 
@@ -244,7 +243,7 @@ class Core(CorePluginBase):
         if not torrent:
             return
 
-        owner = self.get_torrent_user(torrent_id)
+        owner = self.get_torrent_chat(torrent_id)
         if not owner:
             return
 
@@ -261,7 +260,7 @@ class Core(CorePluginBase):
         # if torrent_added["time_added"] < (time.time() - 300):
         #     return
 
-        log.debug(f'Owner: {owner}, Torrent: {torrent}, User torrents: {self.config["user_torrents"]}')
+        log.debug(f'Owner: {owner}, Torrent: {torrent}, Chat torrents: {self.config["chat_torrents"]}')
 
         message = "Torrent added: *%s*" % html.escape(torrent_status['name'])
         self.bot.send_message(chat_id=owner, text=message, parse_mode=ParseMode.HTML)
@@ -270,7 +269,7 @@ class Core(CorePluginBase):
         """
         This is called when a torrent is removed.
         """
-        self.cleanup_user_torrents()
+        self.cleanup_chat_torrents()
 
     def _on_torrent_finished(self, torrent_id):
         """
@@ -281,7 +280,7 @@ class Core(CorePluginBase):
         if not torrent:
             return
 
-        owner = self.get_torrent_user(torrent_id)
+        owner = self.get_torrent_chat(torrent_id)
         if not owner:
             return
 
@@ -307,7 +306,7 @@ class Core(CorePluginBase):
         update_str = update.to_dict() if isinstance(update, Update) else str(update)
         update_str = html.escape(json.dumps(update_str, indent=2, ensure_ascii=False))
         chat_data = html.escape(str(context.chat_data))
-        user_data = html.escape(str(context.user_data))
+        user_data = html.escape(str(context.chat_data))
 
         # length of the message should not exceed 4096 characters
         if len(tb_string) + len(update_str) + len(chat_data) + len(user_data) > 3800:
@@ -322,7 +321,7 @@ class Core(CorePluginBase):
             f"<pre>update = {update_str}"
             "</pre>\n\n"
             f"<pre>context.chat_data = {chat_data}</pre>\n\n"
-            f"<pre>context.user_data = {user_data}</pre>\n\n"
+            f"<pre>context.chat_data = {user_data}</pre>\n\n"
             f"<pre>{tb_string}</pre>"
         )
 
@@ -331,7 +330,7 @@ class Core(CorePluginBase):
             chat_id=self.config['admin_chat_id'], text=message, parse_mode=ParseMode.HTML
         )
 
-        #notify original user of the error
+        #notify original chat of the error
         context.bot.send_message(
             chat_id=update.effective_chat.id,
             text="An error occurred. Administrator has been notified.",
@@ -385,7 +384,7 @@ class Core(CorePluginBase):
             return self.advance_to_torrent_type_state(update=update, context=context)
 
     def advance_to_set_label_state(self, update: Update, context: CallbackContext):
-        session_msg = context.user_data.pop('message', '')
+        session_msg = context.chat_data.pop('message', '')
         keyboard_options = [[g] for g in self.available_labels]
 
         update.message.reply_text(
@@ -397,15 +396,15 @@ class Core(CorePluginBase):
 
     def set_label_state_handler(self, update: Update, context: CallbackContext):
         if update.message.text in self.available_labels:
-            context.user_data['label'] = update.message.text
+            context.chat_data['label'] = update.message.text
 
             return self.advance_to_torrent_type_state(update=update, context=context)
         else:
-            context.user_data['message'] = "Invalid label. Try again"
+            context.chat_data['message'] = "Invalid label. Try again"
             return self.advance_to_set_label_state(update=update, context=context)
 
     def advance_to_torrent_type_state(self, update: Update, context: CallbackContext):
-        session_msg = context.user_data.pop('message', '')
+        session_msg = context.chat_data.pop('message', '')
         keyboard_options = [['Magnet'], ['.torrent'], ['URL']]
 
         update.message.reply_text(
@@ -419,7 +418,7 @@ class Core(CorePluginBase):
         return self.advance_to_add_magnet_state(update=update, context=context)
 
     def advance_to_add_magnet_state(self, update: Update, context: CallbackContext):
-        session_msg = context.user_data.pop('message', '')
+        session_msg = context.chat_data.pop('message', '')
         update.message.reply_text(
             text=(f"{session_msg}\n\n" if session_msg else "") + "Send the magnet link",
             reply_markup=ReplyKeyboardRemove(),
@@ -430,7 +429,7 @@ class Core(CorePluginBase):
         return self.advance_to_add_torrent_state(update=update, context=context)
 
     def advance_to_add_torrent_state(self, update: Update, context: CallbackContext):
-        session_msg = context.user_data.pop('message', '')
+        session_msg = context.chat_data.pop('message', '')
         update.message.reply_text(
             text=(f"{session_msg}\n\n" if session_msg else "") + "Send the torrent file",
             reply_markup=ReplyKeyboardRemove(),
@@ -441,7 +440,7 @@ class Core(CorePluginBase):
         return self.advance_to_add_url_state(update=update, context=context)
 
     def advance_to_add_url_state(self, update: Update, context: CallbackContext):
-        session_msg = context.user_data.pop('message', '')
+        session_msg = context.chat_data.pop('message', '')
         update.message.reply_text(
             text=(f"{session_msg}\n\n" if session_msg else "") + "Send the torrent url",
             reply_markup=ReplyKeyboardRemove(),
@@ -449,18 +448,18 @@ class Core(CorePluginBase):
         return ADD_URL_STATE
 
     def torrent_type_state_unknown_handler(self, update: Update, context: CallbackContext):
-        context.user_data['message'] = "Invalid option. Try again"
+        context.chat_data['message'] = "Invalid option. Try again"
         return self.advance_to_torrent_type_state(update=update, context=context)
 
     def add_magnet_state_handler(self, update: Update, context: CallbackContext):
         if not is_magnet(update.message.text):
-            context.user_data['message'] = "Invalid magnet link. Try again"
+            context.chat_data['message'] = "Invalid magnet link. Try again"
             return self.advance_to_add_magnet_state(update=update, context=context)
 
         try:
             tid = self.core.add_torrent_magnet(update.message.text, {})
             self.apply_label(tid=tid, context=context)
-            self.add_torrent_for_user(user_id=update.effective_chat.id, torrent_id=tid)
+            self.add_torrent_for_chat(chat_id=update.effective_chat.id, torrent_id=tid)
             self._on_torrent_added(torrent_id=tid)
             return ConversationHandler.END
 
@@ -475,7 +474,7 @@ class Core(CorePluginBase):
 
     def add_torrent_state_handler(self, update: Update, context: CallbackContext):
         if update.message.document.mime_type != 'application/x-bittorrent':
-            context.user_data['message'] = "Invalid torrent file. Try again"
+            context.chat_data['message'] = "Invalid torrent file. Try again"
             return self.advance_to_add_torrent_state(update=update, context=context)
 
         try:
@@ -487,7 +486,7 @@ class Core(CorePluginBase):
                 file_contents = urllib.request.urlopen(request).read()
                 tid = self.core.add_torrent_file(None, b64encode(file_contents), {})
                 self.apply_label(tid, context)
-                self.add_torrent_for_user(user_id=update.effective_chat.id, torrent_id=tid)
+                self.add_torrent_for_chat(chat_id=update.effective_chat.id, torrent_id=tid)
                 self._on_torrent_added(torrent_id=tid)
                 return ConversationHandler.END
 
@@ -507,7 +506,7 @@ class Core(CorePluginBase):
 
     def add_url_state_handler(self, update: Update, context: CallbackContext):
         if not is_url(update.message.text):
-            context.user_data['message'] = "Invalid URL. Try again"
+            context.chat_data['message'] = "Invalid URL. Try again"
             return self.advance_to_add_url_state(update=update, context=context)
 
         try:
@@ -518,7 +517,7 @@ class Core(CorePluginBase):
                 file_contents = urllib.request.urlopen(request).read()
                 tid = self.core.add_torrent_file(None, b64encode(file_contents), {})
                 self.apply_label(tid, context)
-                self.add_torrent_for_user(user_id=update.effective_chat.id, torrent_id=tid)
+                self.add_torrent_for_chat(chat_id=update.effective_chat.id, torrent_id=tid)
                 self._on_torrent_added(torrent_id=tid)
                 return ConversationHandler.END
 
@@ -566,7 +565,7 @@ class Core(CorePluginBase):
     def apply_label(self, tid, context: CallbackContext):
         try:
             self.load_available_labels()
-            label = context.user_data.pop('label', None)
+            label = context.chat_data.pop('label', None)
 
             if label is not None and label != "No Label" and self.label_plugin and label in self.available_labels:
                 self.label_plugin.set_torrent(tid, label.lower())
@@ -576,29 +575,29 @@ class Core(CorePluginBase):
             log.error(str(e) + '\n' + traceback.format_exc())
             return False
 
-    def add_torrent_for_user(self, user_id, torrent_id):
-        if user_id not in self.config['user_torrents']:
-            self.config['user_torrents'][user_id] = []
+    def add_torrent_for_chat(self, chat_id, torrent_id):
+        if chat_id not in self.config['chat_torrents']:
+            self.config['chat_torrents'][chat_id] = []
 
-        if torrent_id not in self.config['user_torrents'][user_id]:
-            self.config['user_torrents'][user_id].append(torrent_id)
+        if torrent_id not in self.config['chat_torrents'][chat_id]:
+            self.config['chat_torrents'][chat_id].append(torrent_id)
             self.config.save()
 
-        log.info(f'User torrents: {self.config["user_torrents"]}')
+        log.info(f'Chat torrents: {self.config["chat_torrents"]}')
 
-    def remove_torrent_for_user(self, torrent_id):
-        for user_id, torrents in self.config['user_torrents'].items():
+    def remove_torrent_for_chat(self, torrent_id):
+        for chat_id, torrents in self.config['chat_torrents'].items():
             if torrent_id in torrents:
                 torrents.remove(torrent_id)
                 if not torrents:  # Clean up empty lists
-                    del self.config['user_torrents'][user_id]
+                    del self.config['chat_torrents'][chat_id]
                 self.config.save()
                 break
 
     @inlineCallbacks
-    def cleanup_user_torrents(self):
+    def cleanup_chat_torrents(self):
         """
-        Removes torrent IDs from user_torrents mapping if they no longer exist in Deluge.
+        Removes torrent IDs from chat_torrents mapping if they no longer exist in Deluge.
         """
         # Get active torrents from Deluge (asynchronous call)
         result = yield self.core.get_torrents_status({}, ['hash'])
@@ -608,21 +607,21 @@ class Core(CorePluginBase):
 
             # Cleanup mapping
             updated = False
-            for user_id, torrents in list(self.config['user_torrents'].items()):
-                self.config['user_torrents'][user_id] = [
+            for chat_id, torrents in list(self.config['chat_torrents'].items()):
+                self.config['chat_torrents'][chat_id] = [
                     tid for tid in torrents if tid in active_torrents
                 ]
-                if not self.config['user_torrents'][user_id]:  # Remove empty entries
-                    del self.config['user_torrents'][user_id]
+                if not self.config['chat_torrents'][chat_id]:  # Remove empty entries
+                    del self.config['chat_torrents'][chat_id]
                 updated = True
 
             if updated:
                 self.config.save()
 
-    def get_torrent_user(self, torrent_id):
-        for user_id in self.config['user_torrents']:
-            if torrent_id in self.config['user_torrents'][user_id]:
-                return user_id
+    def get_torrent_chat(self, torrent_id):
+        for chat_id in self.config['chat_torrents']:
+            if torrent_id in self.config['chat_torrents'][chat_id]:
+                return chat_id
         return None
 
     def list_torrents(self, filter_func):

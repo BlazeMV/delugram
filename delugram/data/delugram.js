@@ -17,8 +17,8 @@ Deluge.ux.DelugramWindowBase = Ext.extend(Ext.Window, {
             items: [
                 {
                     xtype: 'textfield',
-                    fieldLabel: _('User ID'),
-                    name: 'user_id',
+                    fieldLabel: _('Chat ID'),
+                    name: 'chat_id',
                     width: 270,
                 },
                 {
@@ -36,25 +36,25 @@ Deluge.ux.DelugramWindowBase = Ext.extend(Ext.Window, {
     },
 });
 
-Deluge.ux.AddDelugramUserWindow = Ext.extend(Deluge.ux.DelugramWindowBase, {
-    title: _('Add User'),
+Deluge.ux.AddDelugramChatWindow = Ext.extend(Deluge.ux.DelugramWindowBase, {
+    title: _('Add Chat'),
 
     initComponent: function () {
-        Deluge.ux.AddDelugramUserWindow.superclass.initComponent.call(this);
+        Deluge.ux.AddDelugramChatWindow.superclass.initComponent.call(this);
         this.addButton(_('Add'), this.onAddClick, this);
         this.addEvents({
-            useradd: true,
+            chatadd: true,
         });
     },
 
     onAddClick: function () {
         var values = this.form.getForm().getFieldValues();
-        deluge.client.delugram.add_user(values.user_id, values.name, {
+        deluge.client.delugram.add_chat(values.chat_id, values.name, {
             success: function () {
                 this.fireEvent(
-                    'useradd',
+                    'chatadd',
                     this,
-                    values.user_id,
+                    values.chat_id,
                     values.name
                 );
             },
@@ -108,20 +108,20 @@ Deluge.ux.preferences.DelugramPage = Ext.extend(Ext.Panel, {
             ],
         });
 
-        this.users_list = new Ext.list.ListView({
+        this.chat_list = new Ext.list.ListView({
             store: new Ext.data.JsonStore({
                 fields: [
-                    'user_id',
+                    'chat_id',
                     'name'
                 ],
             }),
             columns: [
                 {
-                    id: 'user_id',
+                    id: 'chat_id',
                     width: 0.3,
-                    header: _('User ID'),
+                    header: _('Chat ID'),
                     sortable: true,
-                    dataIndex: 'user_id',
+                    dataIndex: 'chat_id',
                 },
                 {
                     id: 'name',
@@ -132,13 +132,13 @@ Deluge.ux.preferences.DelugramPage = Ext.extend(Ext.Panel, {
             ],
             singleSelect: true,
             autoExpandColumn: 'name',
-            emptyText: 'No users',
+            emptyText: 'No chats allowed',
         });
-        this.users_list.on('selectionchange', this.onSelectionChange, this);
+        this.chat_list.on('selectionchange', this.onSelectionChange, this);
 
         this.panel = this.add({
             items: [
-                this.users_list,
+                this.chat_list,
             ],
             bbar: {
                 items: [
@@ -165,7 +165,7 @@ Deluge.ux.preferences.DelugramPage = Ext.extend(Ext.Panel, {
     reloadConfig: function () {
         deluge.client.delugram.get_config({
             success: function (config) {
-                this.users_list.getStore().loadData(config.users);
+                this.chat_list.getStore().loadData(config.chats);
                 this.form.getForm().setValues({
                     telegram_token: config.telegram_token,
                     admin_chat_id: config.admin_chat_id,
@@ -188,9 +188,9 @@ Deluge.ux.preferences.DelugramPage = Ext.extend(Ext.Panel, {
 
     onAddClick: function () {
         if (!this.addWin) {
-            this.addWin = new Deluge.ux.AddDelugramUserWindow();
+            this.addWin = new Deluge.ux.AddDelugramChatWindow();
             this.addWin.on(
-                'useradd',
+                'chatadd',
                 function () {
                     this.reloadConfig();
                 },
@@ -205,8 +205,8 @@ Deluge.ux.preferences.DelugramPage = Ext.extend(Ext.Panel, {
     },
 
     onRemoveClick: function () {
-        var record = this.users_list.getSelectedRecords()[0];
-        deluge.client.delugram.remove_user(record.json.user_id, {
+        var record = this.chat_list.getSelectedRecords()[0];
+        deluge.client.delugram.remove_chat(record.json.chat_id, {
             success: function () {
                 this.reloadConfig();
             },
