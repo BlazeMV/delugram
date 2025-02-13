@@ -128,6 +128,12 @@ class Core(CorePluginBase):
                 'description': 'List all available commands',
                 'handler': CommandHandler('help', self.help_command_handler),
                 'list_in_help': True
+            },
+            {
+                'name': '/register',
+                'description': 'Register new chat',
+                'handler': CommandHandler('register', self.register_command_handler),
+                'list_in_help': False
             }
         ]
 
@@ -369,6 +375,33 @@ class Core(CorePluginBase):
             # reply_to_message_id=update.message.message_id
         )
         return ConversationHandler.END
+
+    def register_command_handler(self, update: Update, context: CallbackContext):
+        if str(update.effective_chat.id) != self.config['admin_chat_id']:
+            return
+
+        args = update.message.text.split(sep=' ', maxsplit=3)
+
+        if len(args) != 4:
+            update.message.reply_text(
+                text="Invalid arguments. Usage: /register <bot_token> <chat_id> <chat_name>"
+            )
+            return
+
+        if args[1] != self.config['telegram_token']:
+            update.message.reply_text(
+                text="Invalid bot token. Usage: /register <bot_token> <chat_id> <chat_name>"
+            )
+            return
+
+        if self.add_chat(chat_id=args[2], name=args[3]):
+            update.message.reply_text(
+                text="Chat registered successfully\nChat ID: %s\nChat Name: %s" % (args[2], args[3])
+            )
+        else:
+            update.message.reply_text(
+                text="Chat ID already registered"
+            )
 
     def add_command_handler(self, update: Update, context: CallbackContext):
         # refresh available labels list

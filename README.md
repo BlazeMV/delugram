@@ -60,7 +60,8 @@ Use the following Telegram commands to interact with Delugram:
 - ✅️ Status command
 - ✅️ Web UI
 - ✅ Access Control
-- ☑️ Add record to chats config via telegram
+- ✅ Register chat via telegram
+- ☑️ Unregister chat via telegram
 - ☑️ GTK UI
 
 ---
