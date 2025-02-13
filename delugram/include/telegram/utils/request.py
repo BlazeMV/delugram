@@ -50,9 +50,8 @@ except ImportError:  # pragma: no cover
             'python-telegram-bot is using upstream urllib3. This is allowed but not '
             'supported by python-telegram-bot maintainers.'
         )
-    except ImportError as e:
+    except ImportError:
         warnings.warn(
-            str(e) +
             "python-telegram-bot wasn't properly installed. Please refer to README.rst on "
             "how to properly install."
         )

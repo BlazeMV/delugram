@@ -7,8 +7,8 @@ __version__ = '0.1'
 __url__ = 'https://github.com/BlazeMV/delugram'
 __license__ = 'MIT'
 __description__ = 'Deluge plugin to integrate Telegram with your Deluge Server'
-__long_description__ = """"""
-__pkg_data__ = {'deluge_'+__plugin_name__.lower(): ['data/*']}
+__long_description__ = """Deluge plugin to integrate Telegram with your Deluge Server"""
+__pkg_data__ = {__plugin_name__.lower(): ['data/*']}
 
 setup(
     name=__plugin_name__,
