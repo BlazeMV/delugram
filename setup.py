@@ -1,12 +1,12 @@
 from setuptools import find_packages, setup
 
-__plugin_name__ = 'delugram'
+__plugin_name__ = 'Delugram'
 __author__ = 'BlazeMv'
 __author_email__ = 'ad.adamdavid72@gmail.com'
 __version__ = '0.1'
-__url__ = ''
+__url__ = 'https://github.com/BlazeMV/delugram'
 __license__ = 'MIT'
-__description__ = ''
+__description__ = 'Deluge plugin to integrate Telegram with your Deluge Server'
 __long_description__ = """"""
 __pkg_data__ = {'deluge_'+__plugin_name__.lower(): ['data/*']}
 
