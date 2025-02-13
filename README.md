@@ -61,7 +61,7 @@ Use the following Telegram commands to interact with Delugram:
 - ✅️ Web UI
 - ✅ Access Control
 - ✅ Register chat via telegram
-- ☑️ Unregister chat via telegram
+- ✅ Deregister chat via telegram
 - ☑️ GTK UI
 
 ---

@@ -134,6 +134,12 @@ class Core(CorePluginBase):
                 'description': 'Register new chat',
                 'handler': CommandHandler('register', self.register_command_handler),
                 'list_in_help': False
+            },
+            {
+                'name': '/deregister',
+                'description': 'Deregister already registered chat',
+                'handler': CommandHandler('deregister', self.deregister_command_handler),
+                'list_in_help': False
             }
         ]
 
@@ -401,6 +407,33 @@ class Core(CorePluginBase):
         else:
             update.message.reply_text(
                 text="Chat ID already registered"
+            )
+
+    def deregister_command_handler(self, update: Update, context: CallbackContext):
+        if str(update.effective_chat.id) != self.config['admin_chat_id']:
+            return
+
+        args = update.message.text.split(sep=' ', maxsplit=2)
+
+        if len(args) != 3:
+            update.message.reply_text(
+                text="Invalid arguments. Usage: /deregister <bot_token> <chat_id>"
+            )
+            return
+
+        if args[1] != self.config['telegram_token']:
+            update.message.reply_text(
+                text="Invalid bot token. Usage: /deregister <bot_token> <chat_id>"
+            )
+            return
+
+        if self.remove_chat(chat_id=args[2]):
+            update.message.reply_text(
+                text="Chat deregistered successfully\nChat ID: %s" % (args[2])
+            )
+        else:
+            update.message.reply_text(
+                text="Something went wrong"
             )
 
     def add_command_handler(self, update: Update, context: CallbackContext):
