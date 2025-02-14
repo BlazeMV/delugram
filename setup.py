@@ -6,7 +6,7 @@ __author_email__ = 'ad.adamdavid72@gmail.com'
 __version__ = '0.1'
 __url__ = 'https://github.com/BlazeMV/delugram'
 __license__ = 'MIT'
-__description__ = 'Deluge plugin to integrate Telegram with your Deluge Server'
+__description__ = 'Deluge telegram plugin'
 __long_description__ = """Deluge plugin to integrate Telegram with your Deluge Server"""
 __pkg_data__ = {__plugin_name__.lower(): ['data/*']}
 
@@ -33,4 +33,5 @@ setup(
     [delugram.libpaths]
     include = delugram.include
     """ % ((__plugin_name__, __plugin_name__.lower()) * 3)
+    # telegram_vendor = delugram.include.telegram.vendor
 )
