@@ -178,12 +178,16 @@ class Core(CorePluginBase):
             'TorrentFinishedEvent', self._on_torrent_finished
         )
 
-        log.info("Starting to poll")
+        try:
+            log.info("Starting to poll")
 
-        # start polling
-        self.updater.start_polling(poll_interval=1,allowed_updates=[Update.MESSAGE])
+            # start polling
+            self.updater.start_polling(poll_interval=1, allowed_updates=[Update.MESSAGE])
 
-        log.info("Polling started")
+            log.info("Polling started")
+
+        except Exception as e:
+            log.error(str(e) + '\n' + traceback.format_exc())
 
         log.debug('Plugin enabled.')
 
