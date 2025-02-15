@@ -62,7 +62,7 @@ INFOS = [i[0] for i in INFO_DICT]
 
 class Core(CorePluginBase):
 
-    def enable(self):
+    def enable(self, throw_polling_exceptions=False):
         self.core = component.get('Core')
         self.config = deluge.configmanager.ConfigManager(
             'delugram.conf', DEFAULT_PREFS)
@@ -187,7 +187,10 @@ class Core(CorePluginBase):
             log.info("Polling started")
 
         except Exception as e:
+            log.info("Polling failed with token: %s" % self.config['telegram_token'])
             log.error(str(e) + '\n' + traceback.format_exc())
+            if throw_polling_exceptions:
+                raise Exception(f"Telegram: unable to start polling: {e}") from e
 
         log.debug('Plugin enabled.')
 
@@ -225,7 +228,6 @@ class Core(CorePluginBase):
         for key in config:
             self.config[key] = config[key]
         self.config.save()
-        self.enable()
 
     @export
     def get_config(self):
@@ -234,6 +236,9 @@ class Core(CorePluginBase):
 
     @export
     def add_chat(self, chat_id, name):
+        if not chat_id or not name or len(chat_id) < 1 or len(name) < 1:
+            raise ValueError("Invalid Chat ID or Name")
+
         if next((item for item in self.config['chats'] if item["chat_id"] == chat_id), None) is None:
             self.config['chats'].append({"chat_id": chat_id, "name": name})
             self.config.save()
@@ -245,6 +250,14 @@ class Core(CorePluginBase):
         self.config['chats'] = [item for item in self.config['chats'] if item["chat_id"] != chat_id]
         self.config.save()
         return True
+
+    @export
+    def reload(self, config=None):
+        if config and isinstance(config, dict):
+            self.set_config(config)
+
+        self.disable()
+        self.enable(throw_polling_exceptions=True)
 
 
     #########
