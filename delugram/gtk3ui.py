@@ -1,6 +1,15 @@
+# -*- coding: utf-8 -*-
+# Copyright (C) 2025 Your Name <yourname@example.com>
+#
+# Basic plugin template created by the Deluge Team.
+#
+# This file is part of MyPlugin2 and is licensed under GNU GPL 3.0, or later,
+# with the additional special exception to link portions of this program with
+# the OpenSSL library. See LICENSE for more details.
 from __future__ import unicode_literals
 
 import logging
+
 from gi.repository import Gtk
 
 import deluge.component as component
@@ -18,51 +27,29 @@ class Gtk3UI(Gtk3PluginBase):
         self.builder.add_from_file(get_resource('config.ui'))
 
         component.get('Preferences').add_page(
-            'delugram', self.builder.get_object('prefs_box'))
+            'MyPlugin2', self.builder.get_object('prefs_box'))
         component.get('PluginManager').register_hook(
             'on_apply_prefs', self.on_apply_prefs)
         component.get('PluginManager').register_hook(
             'on_show_prefs', self.on_show_prefs)
 
     def disable(self):
-        component.get('Preferences').remove_page('delugram')
+        component.get('Preferences').remove_page('MyPlugin2')
         component.get('PluginManager').deregister_hook(
             'on_apply_prefs', self.on_apply_prefs)
         component.get('PluginManager').deregister_hook(
             'on_show_prefs', self.on_show_prefs)
 
     def on_apply_prefs(self):
-        log.debug('Applying preferences for Delugram')
-
+        log.debug('applying prefs for MyPlugin2')
         config = {
-            'telegram_token': self.builder.get_object('entry_telegram_token').get_text(),
-            'admin_chat_id': int(self.builder.get_object('entry_admin_chat_id').get_text()),
-            'users': self.get_users_list()
+            'test': self.builder.get_object('txt_test').get_text()
         }
-
-        client.delugram.set_config(config)
+        client.myplugin2.set_config(config)
 
     def on_show_prefs(self):
-        client.delugram.get_config().addCallback(self.cb_get_config)
+        client.myplugin2.get_config().addCallback(self.cb_get_config)
 
     def cb_get_config(self, config):
-        """Callback for loading configuration into the UI"""
-        self.builder.get_object('entry_telegram_token').set_text(config.get('telegram_token', ''))
-        self.builder.get_object('entry_admin_chat_id').set_text(str(config.get('admin_chat_id', '')))
-
-        self.populate_users_list(config.get('users', []))
-
-    def populate_users_list(self, users):
-        """Populate the users list in the UI"""
-        user_liststore = self.builder.get_object('liststore_users')
-        user_liststore.clear()
-        for user in users:
-            user_liststore.append([user['chat_id'], user['name']])
-
-    def get_users_list(self):
-        """Retrieve users from the UI and return them as a list of dictionaries"""
-        user_liststore = self.builder.get_object('liststore_users')
-        users = []
-        for row in user_liststore:
-            users.append({"chat_id": row[0], "name": row[1]})
-        return users
+        """callback for on show_prefs"""
+        self.builder.get_object('txt_test').set_text(config['test'])
