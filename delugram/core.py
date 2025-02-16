@@ -2,21 +2,22 @@ from __future__ import unicode_literals
 
 import html
 import json
-import time
 import traceback
 import urllib
 from base64 import b64encode
 
+from telegram import Update, ReplyKeyboardRemove, ReplyKeyboardMarkup
+from telegram.constants import ParseMode
+from telegram.ext import ConversationHandler, CommandHandler, MessageHandler, ContextTypes, ApplicationBuilder, filters
+
 from delugram.logger import log
+
 import deluge.configmanager
 from deluge import component
 from deluge.common import fsize, ftime, fdate, fpeer, fpcnt, fspeed, is_magnet, is_url
 from deluge.core.rpcserver import export
 from deluge.plugins.pluginbase import CorePluginBase
-from telegram import (Bot, Update, ParseMode, ReplyKeyboardRemove, ReplyKeyboardMarkup)
-from telegram.ext import (Updater, CommandHandler, CallbackContext, ConversationHandler, MessageHandler, Filters,
-                          DispatcherHandlerStop)
-from telegram.utils.request import Request
+
 
 
 DEFAULT_PREFS = {
@@ -82,26 +83,26 @@ class Core(CorePluginBase):
                     entry_points=[CommandHandler('add', self.add_command_handler)],
                     states={
                         SET_LABEL_STATE: [
-                            MessageHandler(Filters.text & ~Filters.command, self.set_label_state_handler),
-                            MessageHandler(Filters.all & ~Filters.command, self.invalid_input_handler),
+                            MessageHandler(filters.TEXT & ~filters.COMMAND, self.set_label_state_handler),
+                            MessageHandler(filters.ALL & ~filters.COMMAND, self.invalid_input_handler),
                         ],
                         TORRENT_TYPE_STATE: [
-                            MessageHandler(Filters.regex("^Magnet$"), self.torrent_type_state_magnet_handler),
-                            MessageHandler(Filters.regex(r"^\.torrent$"), self.torrent_type_state_torrent_handler),
-                            MessageHandler(Filters.regex("^URL$"), self.torrent_type_state_url_handler),
-                            MessageHandler(Filters.all & ~Filters.command, self.torrent_type_state_unknown_handler),
+                            MessageHandler(filters.Regex("^Magnet$"), self.torrent_type_state_magnet_handler),
+                            MessageHandler(filters.Regex(r"^\.torrent$"), self.torrent_type_state_torrent_handler),
+                            MessageHandler(filters.Regex("^URL$"), self.torrent_type_state_url_handler),
+                            MessageHandler(filters.ALL & ~filters.COMMAND, self.torrent_type_state_unknown_handler),
                         ],
                         ADD_MAGNET_STATE: [
-                            MessageHandler(Filters.text & ~Filters.command, self.add_magnet_state_handler),
-                            MessageHandler(Filters.all & ~Filters.command, self.invalid_input_handler),
+                            MessageHandler(filters.TEXT & ~filters.COMMAND, self.add_magnet_state_handler),
+                            MessageHandler(filters.ALL & ~filters.COMMAND, self.invalid_input_handler),
                         ],
                         ADD_TORRENT_STATE: [
-                            MessageHandler(Filters.document, self.add_torrent_state_handler),
-                            MessageHandler(Filters.all & ~Filters.command, self.invalid_input_handler),
+                            MessageHandler(filters.Document.FileExtension('.torrent'), self.add_torrent_state_handler),
+                            MessageHandler(filters.ALL & ~filters.COMMAND, self.invalid_input_handler),
                         ],
                         ADD_URL_STATE: [
-                            MessageHandler(Filters.text & ~Filters.command, self.add_url_state_handler),
-                            MessageHandler(Filters.all & ~Filters.command, self.invalid_input_handler),
+                            MessageHandler(filters.TEXT & ~filters.COMMAND, self.add_url_state_handler),
+                            MessageHandler(filters.ALL & ~filters.COMMAND, self.invalid_input_handler),
                         ]
                     },
                     fallbacks=[
@@ -149,68 +150,45 @@ class Core(CorePluginBase):
         self.available_labels = self.load_available_labels()
 
         # check if the telegram token is set, if not, no need to go any further
-        if self.config['telegram_token'] == DEFAULT_PREFS['telegram_token']:
+        if self.config['telegram_token'] == DEFAULT_PREFS['telegram_token'] or \
+                self.config['telegram_token'] == '':
+            if throw_polling_exceptions:
+                raise Exception("Telegram: token not set")
             return
 
+#   def enable(self, throw_polling_exceptions=False):
         # initialize telegram bot
-        self.bot = Bot(self.config['telegram_token'], request=Request(con_pool_size=8))
-        self.updater = Updater(bot=self.bot, use_context=True)
-        self.dispatcher = self.updater.dispatcher
+        self.telegram = ApplicationBuilder().token(self.config['telegram_token']).build()
 
         # register tg middleware
-        self.dispatcher.add_handler(MessageHandler(Filters.all, self.tg_middleware), group=0)
+        self.telegram.add_handler(MessageHandler(filters.ALL, self.tg_middleware), group=0)
 
         # register command handlers to telegram
         for cmd in self.commands:
-            self.dispatcher.add_handler(cmd['handler'], group=1)
+            self.telegram.add_handler(cmd['handler'], group=1)
 
         # register error handlers to telegram
-        self.dispatcher.add_error_handler(self.tg_on_error)
+        self.telegram.add_error_handler(self.tg_on_error)
 
-        # register torrent download finished event listener
-        self.event_manager.register_event_handler(
-            'TorrentAddedEvent', self._on_torrent_added
-        )
-        self.event_manager.register_event_handler(
-            'TorrentRemovedEvent', self._on_torrent_removed
-        )
-        self.event_manager.register_event_handler(
-            'TorrentFinishedEvent', self._on_torrent_finished
-        )
+        log.info("Starting to poll")
 
-        try:
-            log.info("Starting to poll")
+        # start polling
+        self.telegram.run_polling(poll_interval=1, allowed_updates=[Update.MESSAGE])
 
-            # start polling
-            self.updater.start_polling(poll_interval=1, allowed_updates=[Update.MESSAGE])
+        log.info("Polling started")
 
-            log.info("Polling started")
-
-        except Exception as e:
-            log.info("Polling failed with token: %s" % self.config['telegram_token'])
-            log.error(str(e) + '\n' + traceback.format_exc())
-            if throw_polling_exceptions:
-                raise Exception(f"Telegram: unable to start polling: {e}") from e
+        self.register_deluge_event_handlers()
 
         log.debug('Plugin enabled.')
 
     def disable(self):
         self.config.save()
 
-        # unregister torrent download finished event listener
-        self.event_manager.deregister_event_handler(
-            'TorrentAddedEvent', self._on_torrent_added
-        )
-        self.event_manager.deregister_event_handler(
-            'TorrentRemovedEvent', self._on_torrent_removed
-        )
-        self.event_manager.deregister_event_handler(
-            'TorrentFinishedEvent', self._on_torrent_finished
-        )
-
         # stop polling
-        if self.updater:
-            self.updater.stop()
+        if self.telegram:
+            self.telegram.stop_running()
+
+        self.deregister_deluge_event_handlers()
 
         log.debug('Plugin disabled')
 
@@ -264,7 +242,7 @@ class Core(CorePluginBase):
     #  Section: Event Handlers
     #########
 
-    def _on_torrent_added(self, torrent_id, from_state=False):
+    async def _on_torrent_added(self, torrent_id, from_state=False):
         """
         This is called when a torrent is added.
         """
@@ -288,7 +266,7 @@ class Core(CorePluginBase):
         log.debug(f'Owner: {owner}, Torrent: {torrent}, Chat torrents: {self.config["chat_torrents"]}')
 
         message = "Torrent added: *%s*" % html.escape(torrent_status['name'])
-        self.bot.send_message(chat_id=owner, text=message, parse_mode=ParseMode.HTML)
+        await self.telegram.bot.send_message(chat_id=owner, text=message, parse_mode=ParseMode.HTML)
 
     def _on_torrent_removed(self, torrent_id):
         """
@@ -296,7 +274,7 @@ class Core(CorePluginBase):
         """
         self.cleanup_chat_torrents()
 
-    def _on_torrent_finished(self, torrent_id):
+    async def _on_torrent_finished(self, torrent_id):
         """
         This is called when a torrent is finished.
         """
@@ -312,9 +290,9 @@ class Core(CorePluginBase):
         torrent_status = torrent.get_status(['name'])
 
         message = "Torrent finished: *%s*" % html.escape(torrent_status['name'])
-        self.bot.send_message(chat_id=owner, text=message, parse_mode=ParseMode.HTML)
+        await self.bot.send_message(chat_id=owner, text=message, parse_mode=ParseMode.HTML)
 
-    def tg_on_error(self, update: object, context: CallbackContext) -> None:
+    async def tg_on_error(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Log the error and send a telegram message to notify the developer."""
         # Log the error before we do anything else, so we can see it even if something breaks.
         log.error("Exception while handling an update:", exc_info=context.error)
@@ -351,12 +329,12 @@ class Core(CorePluginBase):
         )
 
         # Finally, send the message
-        context.bot.send_message(
+        await context.bot.send_message(
             chat_id=self.config['admin_chat_id'], text=message, parse_mode=ParseMode.HTML
         )
 
         #notify original chat of the error
-        context.bot.send_message(
+        await context.bot.send_message(
             chat_id=update.effective_chat.id,
             text="An error occurred. Administrator has been notified.",
             reply_markup=ReplyKeyboardRemove()
@@ -366,17 +344,17 @@ class Core(CorePluginBase):
     #  Section: Telegram Commands
     #########
 
-    def help_command_handler(self, update: Update, context: CallbackContext):
+    async def help_command_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         help_msg = [
             f"/{cmd['name']} - {cmd['description']}" for cmd in self.commands if cmd['list_in_help']
         ]
-        update.message.reply_text(
+        await update.message.reply_text(
             text='\n'.join(help_msg),
             parse_mode='Markdown',
             # reply_to_message_id=update.message.message_id
         )
 
-    def status_command_handler(self, update: Update, context: CallbackContext):
+    async def status_command_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_torrents = self.config['chat_torrents'].get(str(update.effective_chat.id), [])
         message = self.list_torrents(lambda t:
                                t.get_status(('state',))['state'] in
@@ -384,14 +362,14 @@ class Core(CorePluginBase):
                                 'Paused', 'Checking', 'Error', 'Queued'
                                 ) and str(t.torrent_id) in chat_torrents)
 
-        update.message.reply_text(
+        await update.message.reply_text(
             text=message,
             parse_mode='Markdown'
             # reply_to_message_id=update.message.message_id
         )
 
-    def cancel_command_handler(self, update: Update, context: CallbackContext):
-        update.message.reply_text(
+    async def cancel_command_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text(
             text='Operation cancelled',
             parse_mode='Markdown',
             reply_markup=ReplyKeyboardRemove()
@@ -399,61 +377,61 @@ class Core(CorePluginBase):
         )
         return ConversationHandler.END
 
-    def register_command_handler(self, update: Update, context: CallbackContext):
+    async def register_command_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if str(update.effective_chat.id) != self.config['admin_chat_id']:
             return
 
         args = update.message.text.split(sep=' ', maxsplit=3)
 
         if len(args) != 4:
-            update.message.reply_text(
+            await update.message.reply_text(
                 text="Invalid arguments. Usage: /register <bot_token> <chat_id> <chat_name>"
             )
             return
 
         if args[1] != self.config['telegram_token']:
-            update.message.reply_text(
+            await update.message.reply_text(
                 text="Invalid bot token. Usage: /register <bot_token> <chat_id> <chat_name>"
             )
             return
 
         if self.add_chat(chat_id=args[2], name=args[3]):
-            update.message.reply_text(
+            await update.message.reply_text(
                 text="Chat registered successfully\nChat ID: %s\nChat Name: %s" % (args[2], args[3])
             )
         else:
-            update.message.reply_text(
+            await update.message.reply_text(
                 text="Chat ID already registered"
             )
 
-    def deregister_command_handler(self, update: Update, context: CallbackContext):
+    async def deregister_command_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if str(update.effective_chat.id) != self.config['admin_chat_id']:
             return
 
         args = update.message.text.split(sep=' ', maxsplit=2)
 
         if len(args) != 3:
-            update.message.reply_text(
+            await update.message.reply_text(
                 text="Invalid arguments. Usage: /deregister <bot_token> <chat_id>"
             )
             return
 
         if args[1] != self.config['telegram_token']:
-            update.message.reply_text(
+            await update.message.reply_text(
                 text="Invalid bot token. Usage: /deregister <bot_token> <chat_id>"
             )
             return
 
         if self.remove_chat(chat_id=args[2]):
-            update.message.reply_text(
+            await update.message.reply_text(
                 text="Chat deregistered successfully\nChat ID: %s" % (args[2])
             )
         else:
-            update.message.reply_text(
+            await update.message.reply_text(
                 text="Something went wrong"
             )
 
-    def add_command_handler(self, update: Update, context: CallbackContext):
+    async def add_command_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         # refresh available labels list
         self.load_available_labels()
 
@@ -464,18 +442,18 @@ class Core(CorePluginBase):
         else:
             return self.advance_to_torrent_type_state(update=update, context=context)
 
-    def advance_to_set_label_state(self, update: Update, context: CallbackContext):
+    async def advance_to_set_label_state(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         session_msg = context.chat_data.pop('message', '')
         keyboard_options = [[g] for g in self.available_labels]
 
-        update.message.reply_text(
+        await update.message.reply_text(
             text=(f"{session_msg}\n\n" if session_msg else "") + "Select a label",
             reply_markup=ReplyKeyboardMarkup(keyboard_options, one_time_keyboard=True)
             # reply_to_message_id=update.message.message_id
         )
         return SET_LABEL_STATE
 
-    def set_label_state_handler(self, update: Update, context: CallbackContext):
+    async def set_label_state_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message.text in self.available_labels:
             context.chat_data['label'] = update.message.text
 
@@ -484,55 +462,55 @@ class Core(CorePluginBase):
             context.chat_data['message'] = "Invalid label. Try again"
             return self.advance_to_set_label_state(update=update, context=context)
 
-    def advance_to_torrent_type_state(self, update: Update, context: CallbackContext):
+    async def advance_to_torrent_type_state(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         session_msg = context.chat_data.pop('message', '')
         keyboard_options = [['Magnet'], ['.torrent'], ['URL']]
 
-        update.message.reply_text(
+        await update.message.reply_text(
             text=(f"{session_msg}\n\n" if session_msg else "") + "Select type of torrent source",
             reply_markup=ReplyKeyboardMarkup(keyboard_options, one_time_keyboard=True),
             # reply_to_message_id=update.message.message_id
         )
         return TORRENT_TYPE_STATE
 
-    def torrent_type_state_magnet_handler(self, update: Update, context: CallbackContext):
+    async def torrent_type_state_magnet_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         return self.advance_to_add_magnet_state(update=update, context=context)
 
-    def advance_to_add_magnet_state(self, update: Update, context: CallbackContext):
+    async def advance_to_add_magnet_state(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         session_msg = context.chat_data.pop('message', '')
-        update.message.reply_text(
+        await update.message.reply_text(
             text=(f"{session_msg}\n\n" if session_msg else "") + "Send the magnet link",
             reply_markup=ReplyKeyboardRemove(),
         )
         return ADD_MAGNET_STATE
 
-    def torrent_type_state_torrent_handler(self, update: Update, context: CallbackContext):
+    async def torrent_type_state_torrent_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         return self.advance_to_add_torrent_state(update=update, context=context)
 
-    def advance_to_add_torrent_state(self, update: Update, context: CallbackContext):
+    async def advance_to_add_torrent_state(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         session_msg = context.chat_data.pop('message', '')
-        update.message.reply_text(
+        await update.message.reply_text(
             text=(f"{session_msg}\n\n" if session_msg else "") + "Send the torrent file",
             reply_markup=ReplyKeyboardRemove(),
         )
         return ADD_TORRENT_STATE
 
-    def torrent_type_state_url_handler(self, update: Update, context: CallbackContext):
+    async def torrent_type_state_url_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         return self.advance_to_add_url_state(update=update, context=context)
 
-    def advance_to_add_url_state(self, update: Update, context: CallbackContext):
+    async def advance_to_add_url_state(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         session_msg = context.chat_data.pop('message', '')
-        update.message.reply_text(
+        await update.message.reply_text(
             text=(f"{session_msg}\n\n" if session_msg else "") + "Send the torrent url",
             reply_markup=ReplyKeyboardRemove(),
         )
         return ADD_URL_STATE
 
-    def torrent_type_state_unknown_handler(self, update: Update, context: CallbackContext):
+    async def torrent_type_state_unknown_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.chat_data['message'] = "Invalid option. Try again"
         return self.advance_to_torrent_type_state(update=update, context=context)
 
-    def add_magnet_state_handler(self, update: Update, context: CallbackContext):
+    async def add_magnet_state_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_magnet(update.message.text):
             context.chat_data['message'] = "Invalid magnet link. Try again"
             return self.advance_to_add_magnet_state(update=update, context=context)
@@ -544,7 +522,7 @@ class Core(CorePluginBase):
             return ConversationHandler.END
 
         except Exception as e:
-            update.message.reply_text(
+            await update.message.reply_text(
                 text="Failed to add magnet link",
                 reply_markup=ReplyKeyboardRemove()
             )
@@ -552,7 +530,7 @@ class Core(CorePluginBase):
 
         return ConversationHandler.END
 
-    def add_torrent_state_handler(self, update: Update, context: CallbackContext):
+    async def add_torrent_state_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message.document.mime_type != 'application/x-bittorrent':
             context.chat_data['message'] = "Invalid torrent file. Try again"
             return self.advance_to_add_torrent_state(update=update, context=context)
@@ -570,12 +548,12 @@ class Core(CorePluginBase):
                 return ConversationHandler.END
 
             else:
-                update.message.reply_text(
+                await update.message.reply_text(
                     text="Failed to download torrent file. terminating operation",
                     reply_markup=ReplyKeyboardRemove()
                 )
         except Exception as e:
-            update.message.reply_text(
+            await update.message.reply_text(
                 text="Failed to download torrent file. terminating operation",
                 reply_markup=ReplyKeyboardRemove()
             )
@@ -583,7 +561,7 @@ class Core(CorePluginBase):
 
         return ConversationHandler.END
 
-    def add_url_state_handler(self, update: Update, context: CallbackContext):
+    async def add_url_state_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_url(update.message.text):
             context.chat_data['message'] = "Invalid URL. Try again"
             return self.advance_to_add_url_state(update=update, context=context)
@@ -600,12 +578,12 @@ class Core(CorePluginBase):
                 return ConversationHandler.END
 
             else:
-                update.message.reply_text(
+                await update.message.reply_text(
                     text="Failed to download torrent file",
                     reply_markup=ReplyKeyboardRemove()
                 )
         except Exception as e:
-            update.message.reply_text(
+            await update.message.reply_text(
                 text="Failed to download torrent file",
                 reply_markup=ReplyKeyboardRemove()
             )
@@ -613,19 +591,19 @@ class Core(CorePluginBase):
 
         return ConversationHandler.END
 
-    def invalid_input_handler(self, update: Update, context: CallbackContext):
-        update.message.reply_text(
+    async def invalid_input_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text(
             text="Invalid input. Terminating operation",
             reply_markup=ReplyKeyboardRemove()
         )
         return ConversationHandler.END
 
-    def tg_middleware(self, update: Update, context: CallbackContext):
+    async def tg_middleware(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self.chat_is_permitted(update.effective_chat.id):
             if update.message and update.message.text and update.message.text == '/start':
-                update.message.reply_text(text="Unauthorized\nChat ID: %s" % update.effective_chat.id)
+                await update.message.reply_text(text="Unauthorized\nChat ID: %s" % update.effective_chat.id)
 
-            raise DispatcherHandlerStop()
+            raise Exception("Unauthorized chat")
 
     #########
     #  Section: Helpers
@@ -647,7 +625,7 @@ class Core(CorePluginBase):
 
         return self.available_labels
 
-    def apply_label(self, tid, context: CallbackContext):
+    def apply_label(self, tid, context: ContextTypes.DEFAULT_TYPE):
         try:
             self.load_available_labels()
             label = context.chat_data.pop('label', None)
@@ -726,3 +704,25 @@ class Core(CorePluginBase):
 
     def chat_is_permitted(self, chat_id):
         return str(chat_id) in [item["chat_id"] for item in self.config['chats']]
+
+    def register_deluge_event_handlers(self):
+        self.event_manager.register_event_handler(
+            'TorrentAddedEvent', self._on_torrent_added
+        )
+        self.event_manager.register_event_handler(
+            'TorrentRemovedEvent', self._on_torrent_removed
+        )
+        self.event_manager.register_event_handler(
+            'TorrentFinishedEvent', self._on_torrent_finished
+        )
+
+    def deregister_deluge_event_handlers(self):
+        self.event_manager.deregister_event_handler(
+            'TorrentAddedEvent', self._on_torrent_added
+        )
+        self.event_manager.deregister_event_handler(
+            'TorrentRemovedEvent', self._on_torrent_removed
+        )
+        self.event_manager.deregister_event_handler(
+            'TorrentFinishedEvent', self._on_torrent_finished
+        )

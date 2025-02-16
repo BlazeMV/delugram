@@ -31,7 +31,6 @@ setup(
     [deluge.plugin.web]
     %s = %s:WebUIPlugin
     [delugram.libpaths]
-    include = delugram.include
+    vendor = delugram.vendor
     """ % ((__plugin_name__, __plugin_name__.lower()) * 3)
-    # telegram_vendor = delugram.include.telegram.vendor
 )
