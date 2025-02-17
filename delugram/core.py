@@ -175,20 +175,21 @@ class Core(CorePluginBase):
         # start polling
         log.info("Starting to poll")
         def run_asyncio_loop():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
 
             async def start_bot():
                 await self.telegram.initialize()
                 await self.telegram.start()
                 await self.telegram.updater.start_polling(poll_interval=0.5)
-                print("Bot started")
+                log.info("Bot started with polling in a separate thread using asyncio event loops")
 
-            loop.run_until_complete(start_bot())  # Run the bot inside this loop
-            loop.run_forever()  # Keep the loop running
+            self.loop.run_until_complete(start_bot())  # Run the bot inside this loop
+            self.loop.run_forever()  # Keep the loop running
 
         # Start the thread with the new event loop
-        threading.Thread(target=run_asyncio_loop, daemon=True).start()
+        self.thread = threading.Thread(target=run_asyncio_loop, daemon=True)
+        self.thread.start()
 
         log.info("Polling started")
 
@@ -199,9 +200,22 @@ class Core(CorePluginBase):
     def disable(self):
         self.config.save()
 
-        # stop polling
-        if self.telegram:
-            self.telegram.stop_running()
+        log.info("Stopping Telegram bot...")
+
+        async def stop_bot():
+            await self.telegram.stop()  # Stop PTB gracefully
+
+            # Stop the event loop safely
+            if self.loop.is_running():
+                self.loop.call_soon_threadsafe(self.loop.stop)  # Stop the loop from the main thread
+
+        if hasattr(self, "loop"):  # Ensure loop exists before trying to stop
+            asyncio.run_coroutine_threadsafe(stop_bot(), self.loop)  # Run stop_bot() safely in the loop
+
+        if hasattr(self, "thread"):  # Ensure the thread exists
+            self.thread.join(timeout=5)  # Wait up to 5 seconds for thread to stop
+
+        log.info("Telegram bot stopped.")
 
         self.deregister_deluge_event_handlers()
 
