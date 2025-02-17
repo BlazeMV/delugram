@@ -6,6 +6,9 @@ import traceback
 import urllib
 from base64 import b64encode
 
+import asyncio
+import threading
+
 from telegram import Update, ReplyKeyboardRemove, ReplyKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import ConversationHandler, CommandHandler, MessageHandler, ContextTypes, ApplicationBuilder, filters
@@ -156,7 +159,6 @@ class Core(CorePluginBase):
                 raise Exception("Telegram: token not set")
             return
 
-#   def enable(self, throw_polling_exceptions=False):
         # initialize telegram bot
         self.telegram = ApplicationBuilder().token(self.config['telegram_token']).build()
 
@@ -170,10 +172,23 @@ class Core(CorePluginBase):
         # register error handlers to telegram
         self.telegram.add_error_handler(self.tg_on_error)
 
-        log.info("Starting to poll")
-
         # start polling
-        self.telegram.run_polling(poll_interval=1, allowed_updates=[Update.MESSAGE])
+        log.info("Starting to poll")
+        def run_asyncio_loop():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            async def start_bot():
+                await self.telegram.initialize()
+                await self.telegram.start()
+                await self.telegram.updater.start_polling(poll_interval=0.5)
+                print("Bot started")
+
+            loop.run_until_complete(start_bot())  # Run the bot inside this loop
+            loop.run_forever()  # Keep the loop running
+
+        # Start the thread with the new event loop
+        threading.Thread(target=run_asyncio_loop, daemon=True).start()
 
         log.info("Polling started")
 
