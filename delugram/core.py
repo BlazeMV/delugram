@@ -5,13 +5,15 @@ import json
 import traceback
 import urllib
 from base64 import b64encode
+from typing import Any, Dict, List, Optional
 
 import asyncio
 import threading
 
 from telegram import Update, ReplyKeyboardRemove, ReplyKeyboardMarkup
 from telegram.constants import ParseMode
-from telegram.ext import ConversationHandler, CommandHandler, MessageHandler, ContextTypes, ApplicationBuilder, filters
+from telegram.ext import ConversationHandler, CommandHandler, MessageHandler, ContextTypes, filters, \
+    Application, ApplicationBuilder
 
 from delugram.logger import log
 
@@ -63,135 +65,42 @@ INFO_DICT = (('queue', lambda i, s: i != -1 and str(i) or '#'),
 
 INFOS = [i[0] for i in INFO_DICT]
 
+class InvalidTokenError(Exception):
+    def __init__(self, message: str = "Invalid token provided or token not set"):
+        super().__init__(message)
+
 
 class Core(CorePluginBase):
+    def __init__(self, plugin_name):
+        super().__init__(plugin_name)
+
+        self.core: Optional[Any] = None
+        self.torrent_manager: Optional[Any] = None
+        self.event_manager: Optional[Any] = None
+        self.label_plugin: Optional[Any] = None
+        self.available_labels: Optional[List[str]] = None
+        self.config: Optional[Any] = None
+        self.telegram: Optional[Application] = None
+        self.commands: Optional[Dict[str, Any]] = None
+        self.loop: Optional[asyncio.AbstractEventLoop] = None
+        self.thread: Optional[threading.Thread] = None
 
     def enable(self, throw_polling_exceptions=False):
-        self.core = component.get('Core')
-        self.config = deluge.configmanager.ConfigManager(
-            'delugram.conf', DEFAULT_PREFS)
-
         # hydrate
-        self.commands = [
-            {
-                'name': 'start',
-                'description': 'Start of the conversation',
-                'handler': CommandHandler('start', self.help_command_handler),
-                'list_in_help': False
-            },
-            {
-                'name': 'add',
-                'description': 'Add a new torrent',
-                'handler': ConversationHandler(
-                    entry_points=[CommandHandler('add', self.add_command_handler)],
-                    states={
-                        SET_LABEL_STATE: [
-                            MessageHandler(filters.TEXT & ~filters.COMMAND, self.set_label_state_handler),
-                            MessageHandler(filters.ALL & ~filters.COMMAND, self.invalid_input_handler),
-                        ],
-                        TORRENT_TYPE_STATE: [
-                            MessageHandler(filters.Regex("^Magnet$"), self.torrent_type_state_magnet_handler),
-                            MessageHandler(filters.Regex(r"^\.torrent$"), self.torrent_type_state_torrent_handler),
-                            MessageHandler(filters.Regex("^URL$"), self.torrent_type_state_url_handler),
-                            MessageHandler(filters.ALL & ~filters.COMMAND, self.torrent_type_state_unknown_handler),
-                        ],
-                        ADD_MAGNET_STATE: [
-                            MessageHandler(filters.TEXT & ~filters.COMMAND, self.add_magnet_state_handler),
-                            MessageHandler(filters.ALL & ~filters.COMMAND, self.invalid_input_handler),
-                        ],
-                        ADD_TORRENT_STATE: [
-                            MessageHandler(filters.Document.FileExtension('.torrent'), self.add_torrent_state_handler),
-                            MessageHandler(filters.ALL & ~filters.COMMAND, self.invalid_input_handler),
-                        ],
-                        ADD_URL_STATE: [
-                            MessageHandler(filters.TEXT & ~filters.COMMAND, self.add_url_state_handler),
-                            MessageHandler(filters.ALL & ~filters.COMMAND, self.invalid_input_handler),
-                        ]
-                    },
-                    fallbacks=[
-                        CommandHandler('cancel', self.cancel_command_handler)
-                    ],
-                    # conversation_timeout=120,
-                ),
-                'list_in_help': True
-            },
-            {
-                'name': 'status',
-                'description': 'Show status of active torrents',
-                'handler': CommandHandler('status', self.status_command_handler),
-                'list_in_help': True
-            },
-            {
-                'name': 'cancel',
-                'description': 'Cancels the current operation',
-                'handler': CommandHandler('cancel', self.cancel_command_handler),
-                'list_in_help': True
-            },
-            {
-                'name': 'help',
-                'description': 'List all available commands',
-                'handler': CommandHandler('help', self.help_command_handler),
-                'list_in_help': True
-            },
-            {
-                'name': '/register',
-                'description': 'Register new chat',
-                'handler': CommandHandler('register', self.register_command_handler),
-                'list_in_help': False
-            },
-            {
-                'name': '/deregister',
-                'description': 'Deregister already registered chat',
-                'handler': CommandHandler('deregister', self.deregister_command_handler),
-                'list_in_help': False
-            }
-        ]
-
+        self.core = component.get('Core')
+        self.config = deluge.configmanager.ConfigManager('delugram.conf', DEFAULT_PREFS)
         self.torrent_manager = component.get("TorrentManager")
         self.event_manager = component.get("EventManager")
         self.label_plugin = None
         self.available_labels = self.load_available_labels()
 
-        # check if the telegram token is set, if not, no need to go any further
-        if self.config['telegram_token'] == DEFAULT_PREFS['telegram_token'] or \
-                self.config['telegram_token'] == '':
-            if throw_polling_exceptions:
-                raise Exception("Telegram: token not set")
-            return
-
-        # initialize telegram bot
-        self.telegram = ApplicationBuilder().token(self.config['telegram_token']).build()
-
-        # register tg middleware
-        self.telegram.add_handler(MessageHandler(filters.ALL, self.tg_middleware), group=0)
-
-        # register command handlers to telegram
-        for cmd in self.commands:
-            self.telegram.add_handler(cmd['handler'], group=1)
-
-        # register error handlers to telegram
-        self.telegram.add_error_handler(self.tg_on_error)
-
-        # start polling
-        log.info("Starting to poll")
-        def run_asyncio_loop():
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
-
-            async def start_bot():
-                await self.telegram.initialize()
-                await self.telegram.start()
-                await self.telegram.updater.start_polling(poll_interval=0.5)
-                log.info("Bot started with polling in a separate thread using asyncio event loops")
-
-            self.loop.run_until_complete(start_bot())  # Run the bot inside this loop
-            self.loop.run_forever()  # Keep the loop running
-
-        # Start the thread with the new event loop
-        self.thread = threading.Thread(target=run_asyncio_loop, daemon=True)
-        self.thread.start()
-
-        log.info("Polling started")
+        try:
+            self.initialize_telegram_bot()
+            self.start_telegram_polling()
+        except InvalidTokenError:
+            log.error(f"Invalid telegram bot api token provided or token not set. Telegram will not be initialized \
+                        during Delugram enable. Please set a valid token in the plugin preferences and restart \
+                        Delugram.")
 
         self.register_deluge_event_handlers()
 
@@ -200,22 +109,7 @@ class Core(CorePluginBase):
     def disable(self):
         self.config.save()
 
-        log.info("Stopping Telegram bot...")
-
-        async def stop_bot():
-            await self.telegram.stop()  # Stop PTB gracefully
-
-            # Stop the event loop safely
-            if self.loop.is_running():
-                self.loop.call_soon_threadsafe(self.loop.stop)  # Stop the loop from the main thread
-
-        if hasattr(self, "loop"):  # Ensure loop exists before trying to stop
-            asyncio.run_coroutine_threadsafe(stop_bot(), self.loop)  # Run stop_bot() safely in the loop
-
-        if hasattr(self, "thread"):  # Ensure the thread exists
-            self.thread.join(timeout=5)  # Wait up to 5 seconds for thread to stop
-
-        log.info("Telegram bot stopped.")
+        self.stop_telegram_polling()
 
         self.deregister_deluge_event_handlers()
 
@@ -368,6 +262,171 @@ class Core(CorePluginBase):
             text="An error occurred. Administrator has been notified.",
             reply_markup=ReplyKeyboardRemove()
         )
+
+    #########
+    #  Section: Telegram Helpers
+    #########
+
+    def define_telegram_commands(self):
+        self.commands = [
+            {
+                'name': 'start',
+                'description': 'Start of the conversation',
+                'handler': CommandHandler('start', self.help_command_handler),
+                'list_in_help': False
+            },
+            {
+                'name': 'add',
+                'description': 'Add a new torrent',
+                'handler': ConversationHandler(
+                    entry_points=[CommandHandler('add', self.add_command_handler)],
+                    states={
+                        SET_LABEL_STATE: [
+                            MessageHandler(filters.TEXT & ~filters.COMMAND, self.set_label_state_handler),
+                            MessageHandler(filters.ALL & ~filters.COMMAND, self.invalid_input_handler),
+                        ],
+                        TORRENT_TYPE_STATE: [
+                            MessageHandler(filters.Regex("^Magnet$"), self.torrent_type_state_magnet_handler),
+                            MessageHandler(filters.Regex(r"^\.torrent$"), self.torrent_type_state_torrent_handler),
+                            MessageHandler(filters.Regex("^URL$"), self.torrent_type_state_url_handler),
+                            MessageHandler(filters.ALL & ~filters.COMMAND, self.torrent_type_state_unknown_handler),
+                        ],
+                        ADD_MAGNET_STATE: [
+                            MessageHandler(filters.TEXT & ~filters.COMMAND, self.add_magnet_state_handler),
+                            MessageHandler(filters.ALL & ~filters.COMMAND, self.invalid_input_handler),
+                        ],
+                        ADD_TORRENT_STATE: [
+                            MessageHandler(filters.Document.FileExtension('.torrent'), self.add_torrent_state_handler),
+                            MessageHandler(filters.ALL & ~filters.COMMAND, self.invalid_input_handler),
+                        ],
+                        ADD_URL_STATE: [
+                            MessageHandler(filters.TEXT & ~filters.COMMAND, self.add_url_state_handler),
+                            MessageHandler(filters.ALL & ~filters.COMMAND, self.invalid_input_handler),
+                        ]
+                    },
+                    fallbacks=[
+                        CommandHandler('cancel', self.cancel_command_handler)
+                    ],
+                    # conversation_timeout=120,
+                ),
+                'list_in_help': True
+            },
+            {
+                'name': 'status',
+                'description': 'Show status of active torrents',
+                'handler': CommandHandler('status', self.status_command_handler),
+                'list_in_help': True
+            },
+            {
+                'name': 'cancel',
+                'description': 'Cancels the current operation',
+                'handler': CommandHandler('cancel', self.cancel_command_handler),
+                'list_in_help': True
+            },
+            {
+                'name': 'help',
+                'description': 'List all available commands',
+                'handler': CommandHandler('help', self.help_command_handler),
+                'list_in_help': True
+            },
+            {
+                'name': '/register',
+                'description': 'Register new chat',
+                'handler': CommandHandler('register', self.register_command_handler),
+                'list_in_help': False
+            },
+            {
+                'name': '/deregister',
+                'description': 'Deregister already registered chat',
+                'handler': CommandHandler('deregister', self.deregister_command_handler),
+                'list_in_help': False
+            }
+        ]
+        return self.commands
+
+    def is_telegram_token_set(self):
+        if self.config['telegram_token'] == DEFAULT_PREFS['telegram_token'] or \
+                self.config['telegram_token'] == '':
+            return False
+        return True
+
+    def initialize_telegram_bot(self):
+        if self.telegram:
+            raise RuntimeError("Telegram bot already initialized")
+
+        if not self.is_telegram_token_set():
+            raise InvalidTokenError()
+
+        self.define_telegram_commands()
+
+        self.telegram = ApplicationBuilder().token(self.config['telegram_token']).build()
+
+        # register tg middleware
+        self.telegram.add_handler(MessageHandler(filters.ALL, self.tg_middleware), group=0)
+
+        # register command handlers to telegram
+        for cmd in self.commands:
+            self.telegram.add_handler(cmd['handler'], group=1)
+
+        # register error handlers to telegram
+        self.telegram.add_error_handler(self.tg_on_error)
+
+    async def start_telegram_bot(self):
+        await self.telegram.initialize()
+        await self.telegram.start()
+        await self.telegram.updater.start_polling(poll_interval=0.5)
+
+        log.info("Telegram Bot started with polling in a separate thread using asyncio event loops")
+
+    async def stop_telegram_bot(self):
+        await self.telegram.stop()  # Stop PTB gracefully
+
+        # Stop the event loop safely
+        if self.loop.is_running():
+            self.loop.call_soon_threadsafe(self.loop.stop)  # Stop the loop from the main thread
+
+    def start_telegram_polling(self):
+        if not self.telegram:
+            raise RuntimeError("Telegram bot not initialized. Please call initialize_telegram_bot() first")
+
+        if self.telegram.updater.running:
+            log.warning("Telegram bot already polling. continuing...")
+            return
+
+        # start polling
+        log.debug("Starting to poll")
+
+        # Start the thread with the new event loop
+        self.thread = threading.Thread(target=self.run_asyncio_loop, daemon=True)
+        self.thread.start()
+
+        log.debug("Polling started")
+
+    def stop_telegram_polling(self):
+        if not self.telegram:
+            log.warning("Telegram bot not initialized. As such, it is not polling already. continuing...")
+            return
+
+        if not self.telegram.updater.running:
+            log.warning("Telegram bot not polling already. continuing...")
+            return
+
+        log.debug("Stopping Telegram bot polling...")
+
+        if self.loop:
+            asyncio.run_coroutine_threadsafe(self.stop_telegram_bot(), self.loop)  # Run stop_bot() safely in the loop
+
+        if self.thread:
+            self.thread.join(timeout=5)  # Wait up to 5 seconds for thread to stop
+
+        log.debug("Telegram bot polling stopped.")
+
+    def run_asyncio_loop(self):
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+
+        self.loop.run_until_complete(self.start_telegram_bot())  # Run the bot inside this loop
+        self.loop.run_forever()  # Keep the loop running
 
     #########
     #  Section: Telegram Commands
