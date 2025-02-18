@@ -165,7 +165,7 @@ class Core(CorePluginBase):
     #  Section: Event Handlers
     #########
 
-    async def _on_torrent_added(self, torrent_id, from_state=False):
+    def _on_torrent_added(self, torrent_id, from_state=False):
         """
         This is called when a torrent is added.
         """
@@ -189,7 +189,9 @@ class Core(CorePluginBase):
         log.debug(f'Owner: {owner}, Torrent: {torrent}, Chat torrents: {self.config["chat_torrents"]}')
 
         message = "Torrent added: *%s*" % html.escape(torrent_status['name'])
-        await self.telegram.bot.send_message(chat_id=owner, text=message, parse_mode=ParseMode.HTML)
+        asyncio.ensure_future(
+            self.telegram.bot.send_message(chat_id=owner, text=message, parse_mode=ParseMode.HTML)
+        )
 
     def _on_torrent_removed(self, torrent_id):
         """
@@ -197,7 +199,7 @@ class Core(CorePluginBase):
         """
         self.cleanup_chat_torrents()
 
-    async def _on_torrent_finished(self, torrent_id):
+    def _on_torrent_finished(self, torrent_id):
         """
         This is called when a torrent is finished.
         """
@@ -213,7 +215,9 @@ class Core(CorePluginBase):
         torrent_status = torrent.get_status(['name'])
 
         message = "Torrent finished: *%s*" % html.escape(torrent_status['name'])
-        await self.bot.send_message(chat_id=owner, text=message, parse_mode=ParseMode.HTML)
+        asyncio.ensure_future(
+            self.telegram.bot.send_message(chat_id=owner, text=message, parse_mode=ParseMode.HTML)
+        )
 
     async def tg_on_error(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Log the error and send a telegram message to notify the developer."""
@@ -296,7 +300,7 @@ class Core(CorePluginBase):
                             MessageHandler(filters.ALL & ~filters.COMMAND, self.invalid_input_handler),
                         ],
                         ADD_TORRENT_STATE: [
-                            MessageHandler(filters.Document.FileExtension('.torrent'), self.add_torrent_state_handler),
+                            MessageHandler(filters.Document.FileExtension('torrent'), self.add_torrent_state_handler),
                             MessageHandler(filters.ALL & ~filters.COMMAND, self.invalid_input_handler),
                         ],
                         ADD_URL_STATE: [
@@ -524,11 +528,11 @@ class Core(CorePluginBase):
         self.load_available_labels()
 
         if len(self.available_labels):
-            return self.advance_to_set_label_state(update=update, context=context)
+            return await self.advance_to_set_label_state(update=update, context=context)
 
         # if no labels are found, skip the label selection step
         else:
-            return self.advance_to_torrent_type_state(update=update, context=context)
+            return await self.advance_to_torrent_type_state(update=update, context=context)
 
     async def advance_to_set_label_state(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         session_msg = context.chat_data.pop('message', '')
@@ -545,10 +549,10 @@ class Core(CorePluginBase):
         if update.message.text in self.available_labels:
             context.chat_data['label'] = update.message.text
 
-            return self.advance_to_torrent_type_state(update=update, context=context)
+            return await self.advance_to_torrent_type_state(update=update, context=context)
         else:
             context.chat_data['message'] = "Invalid label. Try again"
-            return self.advance_to_set_label_state(update=update, context=context)
+            return await self.advance_to_set_label_state(update=update, context=context)
 
     async def advance_to_torrent_type_state(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         session_msg = context.chat_data.pop('message', '')
@@ -562,7 +566,7 @@ class Core(CorePluginBase):
         return TORRENT_TYPE_STATE
 
     async def torrent_type_state_magnet_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        return self.advance_to_add_magnet_state(update=update, context=context)
+        return await self.advance_to_add_magnet_state(update=update, context=context)
 
     async def advance_to_add_magnet_state(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         session_msg = context.chat_data.pop('message', '')
@@ -573,7 +577,7 @@ class Core(CorePluginBase):
         return ADD_MAGNET_STATE
 
     async def torrent_type_state_torrent_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        return self.advance_to_add_torrent_state(update=update, context=context)
+        return await self.advance_to_add_torrent_state(update=update, context=context)
 
     async def advance_to_add_torrent_state(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         session_msg = context.chat_data.pop('message', '')
@@ -584,7 +588,7 @@ class Core(CorePluginBase):
         return ADD_TORRENT_STATE
 
     async def torrent_type_state_url_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        return self.advance_to_add_url_state(update=update, context=context)
+        return await self.advance_to_add_url_state(update=update, context=context)
 
     async def advance_to_add_url_state(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         session_msg = context.chat_data.pop('message', '')
@@ -596,12 +600,12 @@ class Core(CorePluginBase):
 
     async def torrent_type_state_unknown_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.chat_data['message'] = "Invalid option. Try again"
-        return self.advance_to_torrent_type_state(update=update, context=context)
+        return await self.advance_to_torrent_type_state(update=update, context=context)
 
     async def add_magnet_state_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_magnet(update.message.text):
             context.chat_data['message'] = "Invalid magnet link. Try again"
-            return self.advance_to_add_magnet_state(update=update, context=context)
+            return await self.advance_to_add_magnet_state(update=update, context=context)
 
         try:
             tid = self.core.add_torrent_magnet(update.message.text, {})
@@ -621,11 +625,11 @@ class Core(CorePluginBase):
     async def add_torrent_state_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message.document.mime_type != 'application/x-bittorrent':
             context.chat_data['message'] = "Invalid torrent file. Try again"
-            return self.advance_to_add_torrent_state(update=update, context=context)
+            return await self.advance_to_add_torrent_state(update=update, context=context)
 
         try:
             # Grab file & add torrent with label
-            file_info = self.bot.getFile(update.message.document.file_id)
+            file_info = await self.telegram.bot.getFile(update.message.document.file_id)
             request = urllib.request.Request(file_info.file_path, headers=HEADERS)
             status_code = urllib.request.urlopen(request).getcode()
             if status_code == 200:
@@ -652,7 +656,7 @@ class Core(CorePluginBase):
     async def add_url_state_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_url(update.message.text):
             context.chat_data['message'] = "Invalid URL. Try again"
-            return self.advance_to_add_url_state(update=update, context=context)
+            return await self.advance_to_add_url_state(update=update, context=context)
 
         try:
             # Grab url & add torrent with label
