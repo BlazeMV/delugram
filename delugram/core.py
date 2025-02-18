@@ -82,7 +82,7 @@ class Core(CorePluginBase):
         self.available_labels: Optional[List[str]] = None
         self.config: Optional[Any] = None
         self.telegram: Optional[Application] = None
-        self.commands: Optional[Dict[str, Any]] = None
+        self.commands: Optional[Dict[Any, Any]] = None
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.thread: Optional[threading.Thread] = None
 
@@ -158,8 +158,10 @@ class Core(CorePluginBase):
         if config and isinstance(config, dict):
             self.set_config(config)
 
-        self.disable()
-        self.enable(throw_polling_exceptions=True)
+        self.stop_telegram_polling()
+
+        self.initialize_telegram_bot()
+        self.start_telegram_polling()
 
 
     #########
@@ -384,11 +386,14 @@ class Core(CorePluginBase):
         log.info("Telegram Bot started with polling in a separate thread using asyncio event loops")
 
     async def stop_telegram_bot(self):
-        await self.telegram.stop()  # Stop PTB gracefully
+        if self.telegram:
+            await self.telegram.stop()  # Stop PTB gracefully
 
         # Stop the event loop safely
         if self.loop.is_running():
             self.loop.call_soon_threadsafe(self.loop.stop)  # Stop the loop from the main thread
+
+        self.telegram = None
 
     def start_telegram_polling(self):
         if not self.telegram:
@@ -408,14 +413,6 @@ class Core(CorePluginBase):
         log.debug("Polling started")
 
     def stop_telegram_polling(self):
-        if not self.telegram:
-            log.warning("Telegram bot not initialized. As such, it is not polling already. continuing...")
-            return
-
-        if not self.telegram.updater.running:
-            log.warning("Telegram bot not polling already. continuing...")
-            return
-
         log.debug("Stopping Telegram bot polling...")
 
         if self.loop:
@@ -423,6 +420,8 @@ class Core(CorePluginBase):
 
         if self.thread:
             self.thread.join(timeout=5)  # Wait up to 5 seconds for thread to stop
+
+        self.reset_telegram_vars()
 
         log.debug("Telegram bot polling stopped.")
 
@@ -432,6 +431,11 @@ class Core(CorePluginBase):
 
         self.loop.run_until_complete(self.start_telegram_bot())  # Run the bot inside this loop
         self.loop.run_forever()  # Keep the loop running
+
+    def reset_telegram_vars(self):
+        self.loop = None
+        self.thread = None
+        self.telegram = None
 
     #########
     #  Section: Telegram Commands
