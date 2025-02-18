@@ -37,11 +37,12 @@ HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 
 SET_LABEL_STATE, TORRENT_TYPE_STATE, ADD_MAGNET_STATE, ADD_TORRENT_STATE, ADD_URL_STATE = range(5)
 
-EMOJI = {'seeding':     '\u23eb',
-         'queued':      '\u23ef',
-         'paused':      '\u23f8',
-         'error':       '\u2757\ufe0f',
-         'downloading': '\u23ec'}
+EMOJI = {'seeding':     '⏫',
+         'queued':      '⏰',
+         'paused':      '⏸️',
+         'error':       '🚫',
+         'downloading': '⏬',
+         'completed':   '✅'}
 
 INFO_DICT = (('queue', lambda i, s: i != -1 and str(i) or '#'),
              ('state', None),
@@ -789,6 +790,13 @@ class Core(CorePluginBase):
     def format_torrent_info(self, torrent):
         try:
             status = torrent.get_status(INFOS)
+            progress = status.get('progress', 0)
+            state = status.get('state', '').lower()
+
+            # Check if progress is 100% and status is paused, then set to completed
+            if progress == 100 and state == 'paused':
+                status['state'] = 'completed'
+
             status_string = ''.join([f(status[i], status) for i, f in INFO_DICT if f is not None])
         except Exception as e:
             status_string = ''
