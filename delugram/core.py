@@ -14,7 +14,7 @@ import threading
 from telegram import Update, ReplyKeyboardRemove, ReplyKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import ConversationHandler, CommandHandler, MessageHandler, ContextTypes, filters, \
-    Application, ApplicationBuilder
+    Application, ApplicationBuilder, ApplicationHandlerStop
 
 from delugram.logger import log
 
@@ -746,10 +746,11 @@ class Core(CorePluginBase):
 
     async def tg_middleware(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self.chat_is_permitted(update.effective_chat.id):
+            log.warning(f"Unauthorized chat: {update.effective_chat.id}")
             if update.message and update.message.text and update.message.text == '/start':
                 await update.message.reply_text(text="Unauthorized\nChat ID: %s" % update.effective_chat.id)
 
-            raise Exception("Unauthorized chat")
+            raise ApplicationHandlerStop("Unauthorized chat")
 
     #########
     #  Section: Helpers
