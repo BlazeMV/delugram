@@ -189,12 +189,21 @@ class Core(CorePluginBase):
 
         torrent_status = torrent.get_status(['name'])
 
-        log.debug(f'Owner: {owner}, Torrent: {torrent}, Chat torrents: {self.config["chat_torrents"]}')
-
         message = "Torrent added: *%s*" % html.escape(torrent_status['name'])
-        asyncio.ensure_future(
-            self.telegram.bot.send_message(chat_id=owner, text=message, parse_mode=ParseMode.HTML)
-        )
+
+        log.debug(f'Owner: {owner}, Torrent: {torrent_status["name"]}, Message: {message}')
+
+        """
+        for some reason deluge events run in a separate thread, so we need to run send_message coroutine
+        in the main thread
+        """
+        if self.loop and self.loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                self.telegram.bot.send_message(chat_id=owner, text=message, parse_mode=ParseMode.HTML),
+                self.loop
+            )
+        else:
+            log.error("No running event loop available to send Telegram message!")
 
     def _on_torrent_removed(self, torrent_id):
         """
@@ -218,9 +227,20 @@ class Core(CorePluginBase):
         torrent_status = torrent.get_status(['name'])
 
         message = "Torrent finished: *%s*" % html.escape(torrent_status['name'])
-        asyncio.ensure_future(
-            self.telegram.bot.send_message(chat_id=owner, text=message, parse_mode=ParseMode.HTML)
-        )
+
+        log.debug(f'Owner: {owner}, Torrent: {torrent_status["name"]}, Message: {message}')
+
+        """
+        for some reason deluge events run in a separate thread, so we need to run send_message coroutine
+        in the main thread
+        """
+        if self.loop and self.loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                self.telegram.bot.send_message(chat_id=owner, text=message, parse_mode=ParseMode.HTML),
+                self.loop
+            )
+        else:
+            log.error("No running event loop available to send Telegram message!")
 
     async def tg_on_error(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Log the error and send a telegram message to notify the developer."""
