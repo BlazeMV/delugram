@@ -17,6 +17,7 @@ from telegram.ext import ConversationHandler, CommandHandler, MessageHandler, Co
 
 from delugram.logger import log
 
+from deluge.event import DelugeEvent
 import deluge.configmanager
 from deluge import component
 from deluge.common import fsize, ftime, fdate, fpeer, fpcnt, fspeed, is_magnet, is_url
@@ -65,6 +66,14 @@ INFO_DICT = (('queue', lambda i, s: i != -1 and str(i) or '#'),
              ('time_added', lambda i, s: '*Added:* %s' % fdate(i)))
 
 INFOS = [i[0] for i in INFO_DICT]
+
+
+class DelugramPollingStatusChangedEvent(DelugeEvent):
+    """Emitted when the Delugram polling status changes."""
+
+    def __init__(self):
+        pass
+
 
 class InvalidTokenError(Exception):
     def __init__(self, message: str = "Invalid token provided or token not set"):
@@ -134,7 +143,11 @@ class Core(CorePluginBase):
     @export
     def get_config(self):
         """Returns the config dictionary"""
-        return self.config.config
+        polling = False
+        if self.telegram and self.telegram.updater.running:
+            polling = True
+
+        return {**self.config.config, 'polling': polling}
 
     @export
     def add_chat(self, chat_id, name):
@@ -154,7 +167,7 @@ class Core(CorePluginBase):
         return True
 
     @export
-    def reload(self, config=None):
+    def reload_telegram(self, config=None):
         if config and isinstance(config, dict):
             self.set_config(config)
 
@@ -403,11 +416,15 @@ class Core(CorePluginBase):
         await self.telegram.start()
         await self.telegram.updater.start_polling(poll_interval=0.5)
 
+        self.event_manager.emit(DelugramPollingStatusChangedEvent())
+
         log.info("Telegram Bot started with polling in a separate thread using asyncio event loops")
 
     async def stop_telegram_bot(self):
         if self.telegram:
             await self.telegram.stop()  # Stop PTB gracefully
+
+        self.event_manager.emit(DelugramPollingStatusChangedEvent())
 
         # Stop the event loop safely
         if self.loop.is_running():

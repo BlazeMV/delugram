@@ -89,6 +89,9 @@ class Gtk3UI(Gtk3PluginBase):
         component.get('PluginManager').register_hook(
             'on_show_prefs', self.on_show_prefs
         )
+        client.register_event_handler(
+            'DelugramPollingStatusChangedEvent', self.on_polling_status_changed_event
+        )
 
         self.config = {}
 
@@ -156,11 +159,16 @@ class Gtk3UI(Gtk3PluginBase):
     def on_restart_button_clicked(self, event=None):
         def cb_restart():
             self.builder.get_object('restart_button').set_sensitive(True)
+            self.reload_config()
             d = dialogs.ErrorDialog('Success', 'Delugram has been restarted')
             d.run()
 
         def restart(result):
-            client.delugram.reload().addCallbacks(self.reload_config, self.on_error_show, callbackArgs=(cb_restart,))
+            client.delugram.reload_telegram().addCallbacks(
+                self.reload_config,
+                self.on_error_show,
+                callbackArgs=(cb_restart,)
+            )
 
         self.builder.get_object('restart_button').set_sensitive(False)
         self.on_apply_prefs(callback=restart)
@@ -192,6 +200,9 @@ class Gtk3UI(Gtk3PluginBase):
     def on_show_prefs(self):
         self.reload_config()
 
+    def on_polling_status_changed_event(self):
+        self.reload_config()
+
     def reload_config(self, result=None, callback=None):
         client.delugram.get_config().addCallbacks(self.cb_get_config, self.on_error_show, callbackArgs=(callback,))
 
@@ -203,6 +214,9 @@ class Gtk3UI(Gtk3PluginBase):
         # set ui input_telegram_token and input_admin_chat_id
         self.builder.get_object('input_telegram_token').set_text(self.config.get('telegram_token', ''))
         self.builder.get_object('input_admin_chat_id').set_text(self.config.get('admin_chat_id', ''))
+        self.builder.get_object('polling_status_label').set_text(
+            'Running ✅' if self.config.get('polling', False)
+            else 'Stopped 🚫 (Double check Telegram Token and Restart Polling)')
 
         # refresh registered chats list
         self.store.clear()
