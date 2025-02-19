@@ -2,6 +2,7 @@ from __future__ import unicode_literals
 
 import html
 import json
+import time
 import traceback
 import urllib
 from base64 import b64encode
@@ -194,10 +195,21 @@ class Core(CorePluginBase):
 
         torrent = self.torrent_manager[torrent_id]
         if not torrent:
+            log.warning(f"Torrent {torrent_id} not found in torrent manager")
             return
+
+        # Retrieve chat_id from torrent metadata
+        chat_id = torrent.options.get("delugram_chat_id", None)
+
+        if not chat_id:
+            log.warning(f"Chat ID not found in metadata for torrent {torrent_id}")
+            return
+
+        self.add_torrent_for_chat(chat_id=chat_id, torrent_id=str(torrent_id))
 
         owner = self.get_torrent_chat(torrent_id)
         if not owner:
+            log.warning(f"Owner not found for torrent {torrent_id}. chat_torrents: {self.config['chat_torrents']}")
             return
 
         torrent_status = torrent.get_status(['name'])
@@ -650,9 +662,9 @@ class Core(CorePluginBase):
             return await self.advance_to_add_magnet_state(update=update, context=context)
 
         try:
-            tid = self.core.add_torrent_magnet(update.message.text, {})
+            tid = self.core.add_torrent_magnet(update.message.text,
+                                               {'delugram_chat_id': update.effective_chat.id})
             self.apply_label(tid=tid, context=context)
-            self.add_torrent_for_chat(chat_id=update.effective_chat.id, torrent_id=str(tid))
             return ConversationHandler.END
 
         except Exception as e:
@@ -676,9 +688,9 @@ class Core(CorePluginBase):
             status_code = urllib.request.urlopen(request).getcode()
             if status_code == 200:
                 file_contents = urllib.request.urlopen(request).read()
-                tid = self.core.add_torrent_file(None, b64encode(file_contents), {})
+                tid = self.core.add_torrent_file(None, b64encode(file_contents),
+                                                 {'delugram_chat_id': update.effective_chat.id})
                 self.apply_label(tid, context)
-                self.add_torrent_for_chat(chat_id=update.effective_chat.id, torrent_id=str(tid))
                 return ConversationHandler.END
 
             else:
@@ -706,9 +718,9 @@ class Core(CorePluginBase):
             status_code = urllib.request.urlopen(request).getcode()
             if status_code == 200:
                 file_contents = urllib.request.urlopen(request).read()
-                tid = self.core.add_torrent_file(None, b64encode(file_contents), {})
+                tid = self.core.add_torrent_file(None, b64encode(file_contents),
+                                                 {'delugram_chat_id': update.effective_chat.id})
                 self.apply_label(tid, context)
-                self.add_torrent_for_chat(chat_id=update.effective_chat.id, torrent_id=str(tid))
                 return ConversationHandler.END
 
             else:
@@ -801,16 +813,20 @@ class Core(CorePluginBase):
         # Get active torrents from Deluge
         torrents = list(str(t) for t in self.torrent_manager.torrents.keys())
 
+        log.debug(f"before cleanup: {self.config['chat_torrents']}")
+
         if isinstance(torrents, list):
             # Iterate over chat_ids and remove any matching torrent_id from the list
             for chat_id in list(self.config['chat_torrents'].keys()):
                 # Remove all non-matching torrent IDs
                 for torrent_id in self.config['chat_torrents'][chat_id]:
                     if not torrent_id in torrents:
-                        # self.config['chat_torrents'][chat_id].remove(torrent_id)
+                        self.config['chat_torrents'][chat_id].remove(torrent_id)
                         pass
 
-            # self.config.save()
+            self.config.save()
+
+        log.debug(f"after cleanup: {self.config['chat_torrents']}")
 
     def get_torrent_chat(self, torrent_id):
         for chat_id in self.config['chat_torrents']:
