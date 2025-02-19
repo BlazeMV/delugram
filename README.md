@@ -62,7 +62,8 @@ Use the following Telegram commands to interact with Delugram:
 - ✅ Access Control
 - ✅ Register chat via telegram
 - ✅ Deregister chat via telegram
-- ☑️ GTK UI
+- ✅ GTK UI
+- ✅ Upgrade PTB to v21
 
 ---
 
