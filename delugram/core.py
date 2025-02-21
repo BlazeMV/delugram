@@ -2,10 +2,9 @@ from __future__ import unicode_literals
 
 import html
 import json
-import time
 import traceback
 import urllib
-from base64 import b64encode
+from base64 import b64encode, b64decode
 from typing import Any, Dict, List, Optional
 
 import asyncio
@@ -24,8 +23,8 @@ from deluge import component
 from deluge.common import fsize, ftime, fdate, fpeer, fpcnt, fspeed, is_magnet, is_url
 from deluge.core.rpcserver import export
 from deluge.plugins.pluginbase import CorePluginBase
-
-
+from deluge.bencode import bdecode
+from deluge.ui.common import TorrentInfo
 
 DEFAULT_PREFS = {
     "telegram_token": "Contact @BotFather, create a new bot and get a bot token",
@@ -96,7 +95,7 @@ class Core(CorePluginBase):
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.thread: Optional[threading.Thread] = None
 
-    def enable(self, throw_polling_exceptions=False):
+    def enable(self):
         # hydrate
         self.core = component.get('Core')
         self.config = deluge.configmanager.ConfigManager('delugram.conf', DEFAULT_PREFS)
@@ -198,6 +197,9 @@ class Core(CorePluginBase):
             log.warning(f"Torrent {torrent_id} not found in torrent manager")
             return
 
+        priorities = torrent.options["file_priorities"]
+        log.debug(f"_on_torrent_added: Torrent {torrent_id} added with file priorities: {priorities}")
+
         # Retrieve chat_id from torrent metadata
         chat_id = torrent.options.get("delugram_chat_id", None)
 
@@ -244,6 +246,9 @@ class Core(CorePluginBase):
         torrent = self.torrent_manager[torrent_id]
         if not torrent:
             return
+
+        priorities = torrent.options["file_priorities"]
+        log.debug(f"_on_torrent_finished: Torrent {torrent_id} added with file priorities: {priorities}")
 
         owner = self.get_torrent_chat(torrent_id)
         if not owner:
@@ -662,8 +667,41 @@ class Core(CorePluginBase):
             return await self.advance_to_add_magnet_state(update=update, context=context)
 
         try:
-            tid = self.core.add_torrent_magnet(update.message.text,
-                                               {'delugram_chat_id': update.effective_chat.id})
+            """
+            When adding magnets, deluge doesn't get files and file_priorities (since they are not available
+            in the magnet link, unlike `.torrent` files). So we need to fetch the metadata from the magnet
+            link and set the file_priorities to normal. not doing this causes the torrent to be added with
+            no file priority (ie. file_priorities = [] # ie. empty list). But for some reason, files are
+            downloaded anyway. my guess is because the default file priority is normal (4) and here its not
+            set to anything not even to skip, so deluge is picking up default priority. But this behavior
+            (ie. file_priorities = []) causes issues with some other plugins like Filebottool, which expects
+            file_priorities to be set to something. For example, if file_priorities is an empty list in
+            filebottool, it skips over all files without renaming or moving it. So to avoid this, we set all
+            files to normal priority.
+            I don't believe this is something that should be addressed by delugram. especially setting default
+            file priorities to 4 (Normal). This is something that should be addressed by deluge or filebottool.
+            But for now, this is a workaround.
+            If deluge or filebottool changes this behavior, this workaround should be be removed.
+            If deluge or filebottool doesn't change this behavior, as a long term solution we can add a config
+            option to set default file priorities for magnets, giving the user the option to set the default
+            file priorities to 0 (skip), 1 (low), 4 (normal), 7 (high) or None to skip over this workaround all
+            together. 
+            """
+            # since fetching metadata takes some time, lets give a response to user first
+            await update.message.reply_text(
+                text="Fetching metadata for magnet link. Please wait...",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            info_hash, encoded_metadata = await self.core.prefetch_magnet_metadata(update.message.text).asFuture(
+                asyncio.get_event_loop())
+            metadata = bdecode(b64decode(encoded_metadata))
+            torrent_info = TorrentInfo.from_metadata(metadata)
+            file_priorities = [4] * len(torrent_info.files)  # Set all files to normal priority
+
+            tid = self.core.add_torrent_magnet(uri=update.message.text, options={
+                'delugram_chat_id': update.effective_chat.id,
+                'file_priorities': file_priorities,
+            })
             self.apply_label(tid=tid, context=context)
             return ConversationHandler.END
 
