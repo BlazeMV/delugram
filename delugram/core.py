@@ -894,12 +894,15 @@ class Core(CorePluginBase):
     def format_torrent_info(self, torrent):
         try:
             status = torrent.get_status(INFOS)
-            progress = status.get('progress', 0)
-            state = status.get('state', '').lower()
 
             # Check if progress is 100% and status is paused, then set to completed
-            if progress == 100 and state == 'paused':
+            if status.get('progress', 0) == 100 and status.get('state', '').lower() == 'paused':
                 status['state'] = 'completed'
+
+            # get original_name from options and replace status['name'] if exists
+            original_name = torrent.options.get("original_name", None)
+            if original_name:
+                status['name'] = original_name
 
             status_string = ''.join([f(status[i], status) for i, f in INFO_DICT if f is not None])
         except Exception as e:
