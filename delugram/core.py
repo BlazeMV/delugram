@@ -835,17 +835,6 @@ class Core(CorePluginBase):
             self.config['chat_torrents'][chat_id].append(torrent_id)
             self.config.save()
 
-    def remove_torrent_for_chat(self, torrent_id):
-        torrent_id = str(torrent_id)
-
-        for chat_id, torrents in self.config['chat_torrents'].items():
-            if torrent_id in torrents:
-                torrents.remove(torrent_id)
-                if not torrents:  # Clean up empty lists
-                    del self.config['chat_torrents'][chat_id]
-                self.config.save()
-                break
-
     def cleanup_chat_torrents(self):
         """
         Removes torrent IDs from chat_torrents mapping if they no longer exist in Deluge.
