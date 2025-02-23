@@ -209,7 +209,7 @@ class Core(CorePluginBase):
             log.warning(f"Chat ID not found in torrent options. {torrent_id}")
             return
 
-        self.add_torrent_for_chat(chat_id=chat_id, torrent_id=str(torrent_id))
+        self.add_torrent_for_chat(chat_id=chat_id, torrent_id=str(torrent_id), torrent_name=torrent_name)
 
         owner = self.get_torrent_chat(torrent_id)
         if not owner:
@@ -824,15 +824,15 @@ class Core(CorePluginBase):
             log.error(str(e) + '\n' + traceback.format_exc())
             return False
 
-    def add_torrent_for_chat(self, chat_id, torrent_id):
+    def add_torrent_for_chat(self, chat_id, torrent_id, torrent_name):
         chat_id = str(chat_id)
         torrent_id = str(torrent_id)
 
         if chat_id not in self.config['chat_torrents']:
-            self.config['chat_torrents'][chat_id] = []
+            self.config['chat_torrents'][chat_id] = {}
 
         if torrent_id not in self.config['chat_torrents'][chat_id]:
-            self.config['chat_torrents'][chat_id].append(torrent_id)
+            self.config['chat_torrents'][chat_id][torrent_id] = torrent_name
             self.config.save()
 
     def cleanup_chat_torrents(self):
