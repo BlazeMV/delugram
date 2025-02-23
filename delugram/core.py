@@ -198,19 +198,15 @@ class Core(CorePluginBase):
             return
 
         torrent_name = torrent.get_status(['name'])['name']
-        if not torrent.options.get("original_name", None):
-            torrent.set_options({"original_name": torrent_name})
-
-        torrent_name = torrent.options.get("original_name", torrent_name)
 
         priorities = torrent.options.get("file_priorities", None)
-        log.debug(f"_on_torrent_added: Torrent {torrent_id} added with file priorities: {priorities}")
+        log.debug(f"Torrent {torrent_id} added with file priorities: {priorities}")
 
         # Retrieve chat_id from torrent metadata
         chat_id = torrent.options.get("delugram_chat_id", None)
 
         if not chat_id:
-            log.warning(f"Chat ID not found in metadata for torrent {torrent_id}")
+            log.warning(f"Chat ID not found in torrent options. {torrent_id}")
             return
 
         self.add_torrent_for_chat(chat_id=chat_id, torrent_id=str(torrent_id))
@@ -249,16 +245,13 @@ class Core(CorePluginBase):
 
         torrent = self.torrent_manager[torrent_id]
         if not torrent:
+            log.warning(f"Torrent {torrent_id} not found in torrent manager")
             return
 
         torrent_name = torrent.get_status(['name'])['name']
-        if not torrent.options.get("original_name", None):
-            torrent.set_options({"original_name": torrent_name})
-
-        torrent_name = torrent.options.get("original_name", torrent_name)
 
         priorities = torrent.options.get("file_priorities", None)
-        log.debug(f"_on_torrent_finished: Torrent {torrent_id} added with file priorities: {priorities}")
+        log.debug(f"Torrent {torrent_id} completed with file priorities: {priorities}")
 
         owner = self.get_torrent_chat(torrent_id)
         if not owner:
@@ -898,11 +891,6 @@ class Core(CorePluginBase):
             # Check if progress is 100% and status is paused, then set to completed
             if status.get('progress', 0) == 100 and status.get('state', '').lower() == 'paused':
                 status['state'] = 'completed'
-
-            # get original_name from options and replace status['name'] if exists
-            original_name = torrent.options.get("original_name", None)
-            if original_name:
-                status['name'] = original_name
 
             status_string = ''.join([f(status[i], status) for i, f in INFO_DICT if f is not None])
         except Exception as e:
