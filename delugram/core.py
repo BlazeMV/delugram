@@ -871,6 +871,9 @@ class Core(CorePluginBase):
     def list_torrents(self, filter_func):
         selected_torrents = []
         torrents = list(self.torrent_manager.torrents.values())
+        # sort torrents by time added and get the last 10
+        torrents = sorted(torrents, key=lambda t: t.get_status(('time_added',))['time_added'], reverse=True)[:10]
+
         for t in torrents:
             if filter_func(t):
                 selected_torrents.append(self.format_torrent_info(t))
