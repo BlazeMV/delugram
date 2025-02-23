@@ -886,9 +886,24 @@ class Core(CorePluginBase):
         try:
             status = torrent.get_status(INFOS)
 
-            # Check if progress is 100% and status is paused, then set to completed
+            """
+            Check if progress is 100% and status is paused, then set to completed
+            (download completed but torrent no longer seeding)
+            """
             if status.get('progress', 0) == 100 and status.get('state', '').lower() == 'paused':
                 status['state'] = 'completed'
+
+            """
+            replace status['name'] with original name from chat_torrents
+            sometimes when torrent is moved / renamed using filebottool, the name in deluge changes
+            to something that might not make a lot of sense (like "season 1") so we store the original
+            name in chat_torrents and use that when listing torrents for the user. (this is important
+            since "added" and "finished" messages are sent using the same (original) name
+            """
+            # first find the torrent_id in chat_torrents
+            chat_id = self.get_torrent_chat(torrent.torrent_id)
+            if chat_id:
+                status['name'] = self.config['chat_torrents'][chat_id].get(str(torrent.torrent_id), status['name'])
 
             status_string = ''.join([f(status[i], status) for i, f in INFO_DICT if f is not None])
         except Exception as e:
