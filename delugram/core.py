@@ -186,9 +186,6 @@ class Core(CorePluginBase):
         This is called when a torrent is added.
         """
 
-        # clean up existing torrents
-        self.cleanup_chat_torrents()
-
         if from_state:
             return
 
@@ -507,6 +504,9 @@ class Core(CorePluginBase):
         )
 
     async def status_command_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # clean up existing torrents (if removed or any other reason)
+        self.cleanup_chat_torrents()
+
         chat_torrents = self.config['chat_torrents'].get(str(update.effective_chat.id), [])
         message = self.list_torrents(lambda t:
                                t.get_status(('state',))['state'] in
@@ -856,6 +856,7 @@ class Core(CorePluginBase):
             # is not found in torrents list, remove that key from self.config['chat_torrents'][chat_id]
             for torrent_id in self.config['chat_torrents'][chat_id]:
                 if torrent_id not in torrents:
+                    log.info(f"Removing torrent {torrent_id} from chat {chat_id}, Reason: Torrent not found")
                     del self.config['chat_torrents'][chat_id][torrent_id]
 
         self.config.save()
