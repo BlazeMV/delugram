@@ -841,21 +841,26 @@ class Core(CorePluginBase):
         """
         # Get active torrents from Deluge
         torrents = list(str(t) for t in self.torrent_manager.torrents.keys())
+        if not isinstance(torrents, list):
+            return
 
-        log.debug(f"before cleanup: {self.config['chat_torrents']}")
+        log.debug(f"before chat_torrents cleanup: {self.config['chat_torrents']}")
 
-        if isinstance(torrents, list):
-            # Iterate over chat_ids and remove any matching torrent_id from the list
-            for chat_id in list(self.config['chat_torrents'].keys()):
-                # Remove all non-matching torrent IDs
-                for torrent_id in self.config['chat_torrents'][chat_id]:
-                    if not torrent_id in torrents:
-                        self.config['chat_torrents'][chat_id].remove(torrent_id)
-                        pass
+        # Iterate over chat_ids and remove any matching torrent_id from the list
+        for chat_id in list(self.config['chat_torrents'].keys()):
+            # partial backward compatibility (resets chat_torrents to dict if it's not)
+            if not isinstance(self.config['chat_torrents'][chat_id], dict):
+                self.config['chat_torrents'][chat_id] = {}
 
-            self.config.save()
+            # Iterate over key values inside self.config['chat_torrents'][chat_id] and if key (torrent_id)
+            # is not found in torrents list, remove that key from self.config['chat_torrents'][chat_id]
+            for torrent_id in self.config['chat_torrents'][chat_id]:
+                if torrent_id not in torrents:
+                    del self.config['chat_torrents'][chat_id][torrent_id]
 
-        log.debug(f"after cleanup: {self.config['chat_torrents']}")
+        self.config.save()
+
+        log.debug(f"after chat_torrents cleanup: {self.config['chat_torrents']}")
 
     def get_torrent_chat(self, torrent_id):
         for chat_id in self.config['chat_torrents']:
