@@ -197,7 +197,13 @@ class Core(CorePluginBase):
             log.warning(f"Torrent {torrent_id} not found in torrent manager")
             return
 
-        priorities = torrent.options["file_priorities"]
+        torrent_name = torrent.get_status(['name'])['name']
+        if not torrent.options.get("original_name", None):
+            torrent.set_options({"original_name": torrent_name})
+
+        torrent_name = torrent.options.get("original_name", torrent_name)
+
+        priorities = torrent.options.get("file_priorities", None)
         log.debug(f"_on_torrent_added: Torrent {torrent_id} added with file priorities: {priorities}")
 
         # Retrieve chat_id from torrent metadata
@@ -214,11 +220,9 @@ class Core(CorePluginBase):
             log.warning(f"Owner not found for torrent {torrent_id}. chat_torrents: {self.config['chat_torrents']}")
             return
 
-        torrent_status = torrent.get_status(['name'])
+        message = "Torrent added: *%s*" % html.escape(torrent_name)
 
-        message = "Torrent added: *%s*" % html.escape(torrent_status['name'])
-
-        log.debug(f'Owner: {owner}, Torrent: {torrent_status["name"]}, Message: {message}')
+        log.debug(f'Owner: {owner}, Torrent: {torrent_name}, Message: {message}')
 
         """
         for some reason deluge events run in a separate thread, so we need to run send_message coroutine
@@ -247,18 +251,22 @@ class Core(CorePluginBase):
         if not torrent:
             return
 
-        priorities = torrent.options["file_priorities"]
+        torrent_name = torrent.get_status(['name'])['name']
+        if not torrent.options.get("original_name", None):
+            torrent.set_options({"original_name": torrent_name})
+
+        torrent_name = torrent.options.get("original_name", torrent_name)
+
+        priorities = torrent.options.get("file_priorities", None)
         log.debug(f"_on_torrent_finished: Torrent {torrent_id} added with file priorities: {priorities}")
 
         owner = self.get_torrent_chat(torrent_id)
         if not owner:
             return
 
-        torrent_status = torrent.get_status(['name'])
+        message = "Torrent finished: *%s*" % html.escape(torrent_name)
 
-        message = "Torrent finished: *%s*" % html.escape(torrent_status['name'])
-
-        log.debug(f'Owner: {owner}, Torrent: {torrent_status["name"]}, Message: {message}')
+        log.debug(f'Owner: {owner}, Torrent: {torrent_name}, Message: {message}')
 
         """
         for some reason deluge events run in a separate thread, so we need to run send_message coroutine
