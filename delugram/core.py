@@ -708,7 +708,7 @@ class Core(CorePluginBase):
 
         except Exception as e:
             await update.message.reply_text(
-                text="Failed to add magnet link",
+                text="Failed to add magnet link. Terminating operation\nerror: %s" % str(e),
                 reply_markup=ReplyKeyboardRemove()
             )
             log.error(str(e) + '\n' + traceback.format_exc())
@@ -734,12 +734,12 @@ class Core(CorePluginBase):
 
             else:
                 await update.message.reply_text(
-                    text="Failed to download torrent file. terminating operation",
+                    text="Failed to download torrent file. Terminating operation",
                     reply_markup=ReplyKeyboardRemove()
                 )
         except Exception as e:
             await update.message.reply_text(
-                text="Failed to download torrent file. terminating operation",
+                text="Failed to download torrent file. Terminating operation\nerror: %s" % str(e),
                 reply_markup=ReplyKeyboardRemove()
             )
             log.error(str(e) + '\n' + traceback.format_exc())
@@ -764,12 +764,12 @@ class Core(CorePluginBase):
 
             else:
                 await update.message.reply_text(
-                    text="Failed to download torrent file",
+                    text="Failed to download torrent file. Terminating operation",
                     reply_markup=ReplyKeyboardRemove()
                 )
         except Exception as e:
             await update.message.reply_text(
-                text="Failed to download torrent file",
+                text="Failed to download torrent file. Terminating operation\nerror: %s" % str(e),
                 reply_markup=ReplyKeyboardRemove()
             )
             log.error(str(e) + '\n' + traceback.format_exc())
