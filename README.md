@@ -48,25 +48,6 @@ Use the following Telegram commands to interact with Delugram:
 
 ---
 
-## ✅ Checklist
-
-- ✅ Plugin shell
-- ✅ Integrate python-telegram-bot
-- ✅ Polling for telegram updates
-- ✅ Bot response to all commands
-- ✅️ Maintain torrent owner
-- ✅️ Torrent added notification
-- ✅️ Torrent download completed notification
-- ✅️ Status command
-- ✅️ Web UI
-- ✅ Access Control
-- ✅ Register chat via telegram
-- ✅ Deregister chat via telegram
-- ✅ GTK UI
-- ✅ Upgrade PTB to v21
-
----
-
 ## ℹ️ Disclaimer
 This plugin is heavily inspired by [deluge-telegramer](https://github.com/noam09/deluge-telegramer).
 I stripped out few features mainly to avoid compatibility issues with other plugins and for simplicity (for my personal use).
