@@ -2,6 +2,7 @@ from __future__ import unicode_literals
 
 import html
 import json
+import math
 import traceback
 import urllib
 from base64 import b64encode, b64decode
@@ -507,12 +508,22 @@ class Core(CorePluginBase):
         # clean up existing torrents (if removed or any other reason)
         self.cleanup_chat_torrents()
 
+        #get first arg from the command as page number, default to 1
+        try:
+            page = int(context.args[0] if context.args and len(context.args) else 1)
+            if page < 1:
+                page = 1
+        except (TypeError, ValueError):
+            page = 1
+
+        log.debug(f"Page: {page}")
+
         chat_torrents = self.config['chat_torrents'].get(str(update.effective_chat.id), [])
         message = self.list_torrents(lambda t:
                                t.get_status(('state',))['state'] in
                                ('Active', 'Downloading', 'Seeding',
                                 'Paused', 'Checking', 'Error', 'Queued'
-                                ) and str(t.torrent_id) in chat_torrents)
+                                ) and str(t.torrent_id) in chat_torrents, page=page)
 
         await update.message.reply_text(
             text=message,
@@ -883,18 +894,27 @@ class Core(CorePluginBase):
                 return chat_id
         return None
 
-    def list_torrents(self, filter_func):
+    def list_torrents(self, filter_func, page=1):
         selected_torrents = []
-        torrents = list(self.torrent_manager.torrents.values())
-        # sort torrents by time added and get the last 10
-        torrents = sorted(torrents, key=lambda t: t.get_status(('time_added',))['time_added'], reverse=True)[:10]
+        all_torrents = list(self.torrent_manager.torrents.values())
+
+        # sort torrents by time added and get 10 based on page number
+        skip = (page - 1) * 2
+        take = page * 2
+
+        if skip >= len(all_torrents):
+            return "Not enough torrents to display page %s" % page
+
+        torrents = sorted(all_torrents,
+                          key=lambda t: t.get_status(('time_added',))['time_added'],
+                          reverse=True)[skip:take]
 
         for t in torrents:
             if filter_func(t):
                 selected_torrents.append(self.format_torrent_info(t))
         if len(selected_torrents) == 0:
             return "No active torrents found"
-        return "\n\n".join(selected_torrents)
+        return "\n\n".join(selected_torrents) + f"\n\nPage: {page} of {math.ceil(len(all_torrents) / 2)}"
 
     def format_torrent_info(self, torrent):
         try:
