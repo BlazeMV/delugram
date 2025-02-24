@@ -899,8 +899,8 @@ class Core(CorePluginBase):
         all_torrents = list(self.torrent_manager.torrents.values())
 
         # sort torrents by time added and get 10 based on page number
-        skip = (page - 1) * 2
-        take = page * 2
+        skip = (page - 1) * 10
+        take = page * 10
 
         if skip >= len(all_torrents):
             return "Not enough torrents to display page %s" % page
@@ -914,7 +914,7 @@ class Core(CorePluginBase):
                 selected_torrents.append(self.format_torrent_info(t))
         if len(selected_torrents) == 0:
             return "No active torrents found"
-        return "\n\n".join(selected_torrents) + f"\n\nPage: {page} of {math.ceil(len(all_torrents) / 2)}"
+        return "\n\n".join(selected_torrents) + f"\n\nPage: {page} of {math.ceil(len(all_torrents) / 10)}"
 
     def format_torrent_info(self, torrent):
         try:
