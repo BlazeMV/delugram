@@ -693,17 +693,31 @@ class Core(CorePluginBase):
                 text="Fetching metadata for magnet link. Please wait...",
                 reply_markup=ReplyKeyboardRemove()
             )
-            info_hash, encoded_metadata = await self.core.prefetch_magnet_metadata(update.message.text).asFuture(
-                asyncio.get_event_loop())
-            metadata = bdecode(b64decode(encoded_metadata))
-            torrent_info = TorrentInfo.from_metadata(metadata)
-            file_priorities = [4] * len(torrent_info.files)  # Set all files to normal priority
 
-            tid = self.core.add_torrent_magnet(uri=update.message.text, options={
-                'delugram_chat_id': update.effective_chat.id,
-                'file_priorities': file_priorities,
-            })
-            self.apply_label(tid=tid, context=context)
+            async def add_magnet():
+                log.info(f"Adding magnet link")
+                info_hash, encoded_metadata = await self.core.prefetch_magnet_metadata(update.message.text).asFuture(
+                    asyncio.get_event_loop())
+                metadata = bdecode(b64decode(encoded_metadata))
+                torrent_info = TorrentInfo.from_metadata(metadata)
+                file_priorities = [4] * len(torrent_info.files)  # Set all files to normal priority
+
+                tid = self.core.add_torrent_magnet(uri=update.message.text, options={
+                    'delugram_chat_id': update.effective_chat.id,
+                    'file_priorities': file_priorities,
+                })
+                self.apply_label(tid=tid, context=context)
+
+            # since fetching metadata takes a few seconds, we don't want to block the main thread so,
+            # run the add_magnet in the event loop, if available, else run it in the main thread
+            if self.loop and self.loop.is_running():
+                asyncio.run_coroutine_threadsafe(
+                    add_magnet(),
+                    self.loop
+                )
+            else:
+                log.error("No running event loop available to add magnet torrent. falling back to blocking call")
+                await add_magnet()
             return ConversationHandler.END
 
         except Exception as e:
