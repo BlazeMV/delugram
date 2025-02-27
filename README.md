@@ -10,7 +10,7 @@ Delugram is a Deluge plugin that integrates Telegram with your Deluge server, al
 - 🏷 **Assign labels** when adding torrents
 - 🔗 **Supports** `.torrent` files, magnet links, and direct URLs
 - 🔔 **Receive notifications** when a download is completed
-- 📋 **List active torrents**
+- 📋 **List active torrents** with their status
 
 ---
 
@@ -26,13 +26,25 @@ Delugram is a Deluge plugin that integrates Telegram with your Deluge server, al
 
 ### 🏗 Method 2: Building from Source
 
-1. **Clone** this repository using:
-2. **Build** the `.egg` file from source:
+1. **Clone** this repository
+2. **Setup** python vertual environment (venv):
    ```sh
-   python setup.py bdist_egg
+   cd delugram # repo dir name
+   python3 -m venv .venv
+   source .venv/bin/activate
    ```
+3. **Install** the required dependencies:
+   ```sh
+   pip install -r requirements-dev.txt
+   pip install --target=delugram/vendor -r requirements-vendor.txt
+
+4. **Build** the `.egg` file from source:
+   ```sh
+   ./build.sh prod
+   ```
+   
    This will generate the `.egg` file inside the `dist/` folder.
-3. **Follow** steps 2-4 from Method 1.
+5. **Follow** steps 2-4 from Method 1.
 
 ---
 
