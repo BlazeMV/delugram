@@ -2,10 +2,9 @@
 
 # Function to print usage
 print_usage() {
-    echo "Usage: $0 <dev|prod> [-v] [config_dir]"
+    echo "Usage: $0 <dev|prod> [config_dir]"
     echo "  dev: Build in development mode (.egg-link)"
     echo "  prod: Build in production mode (.egg)"
-    echo "  -v: Rebuild vendor directory (only allowed in dev mode)"
     echo "  config_dir: Optional deluge config directory (defaults to ~/.config/deluge)"
 }
 
@@ -26,27 +25,6 @@ if [[ "$BUILD_MODE" != "dev" && "$BUILD_MODE" != "prod" ]]; then
     exit 1
 fi
 
-# Parse options
-REBUILD_VENDOR=false
-while getopts "v" opt; do
-    case $opt in
-        v)
-            if [ "$BUILD_MODE" != "dev" ]; then
-                echo "Error: -v option is only allowed in dev mode."
-                exit 1
-            fi
-            REBUILD_VENDOR=true
-            ;;
-        \?)
-            print_usage
-            exit 1
-            ;;
-    esac
-done
-
-# Shift past the options to get the remaining arguments
-shift $((OPTIND-1))
-
 # Get base directory
 BASEDIR=$(cd "$(dirname "$0")" && pwd)
 
@@ -60,15 +38,6 @@ if [ ! -d "$CONFIG_DIR/plugins" ]; then
 fi
 
 cd "$BASEDIR"
-
-# Handle vendor directory rebuild if -v option is passed
-if [ "$REBUILD_VENDOR" = true ]; then
-    echo "Rebuilding vendor directory..."
-    rm -rf "$BASEDIR/delugram/vendor"
-    mkdir -p "$BASEDIR/delugram/vendor"
-    touch "$BASEDIR/delugram/vendor/__init__.py"
-    cp -r "$BASEDIR/.venv/lib/python3.12/site-packages/"* "$BASEDIR/delugram/vendor/"
-fi
 
 # Remove any existing links and build artifacts
 rm -rf "$CONFIG_DIR/plugins"/*.egg-link
