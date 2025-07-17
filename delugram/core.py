@@ -361,7 +361,8 @@ class Core(CorePluginBase):
                         ]
                     },
                     fallbacks=[
-                        CommandHandler('cancel', self.cancel_command_handler)
+                        CommandHandler('cancel', self.cancel_command_handler),
+                        CommandHandler('done', self.done_command_handler)
                     ],
                     # conversation_timeout=120,
                 ),
@@ -594,6 +595,15 @@ class Core(CorePluginBase):
                 text="Something went wrong"
             )
 
+    async def done_command_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text(
+            text='Finished adding torrents.',
+            parse_mode='Markdown',
+            reply_markup=ReplyKeyboardRemove()
+            # reply_to_message_id=update.message.message_id
+        )
+        return ConversationHandler.END
+
     async def add_command_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         # refresh available labels list
         self.load_available_labels()
@@ -697,7 +707,7 @@ class Core(CorePluginBase):
             If deluge or filebottool doesn't change this behavior, as a long term solution we can add a config
             option to set default file priorities for magnets, giving the user the option to set the default
             file priorities to 0 (skip), 1 (low), 4 (normal), 7 (high) or None to skip over this workaround all
-            together. 
+            together.
             """
             # since fetching metadata takes some time, lets give a response to user first
             await update.message.reply_text(
@@ -729,7 +739,9 @@ class Core(CorePluginBase):
             else:
                 log.error("No running event loop available to add magnet torrent. falling back to blocking call")
                 await add_magnet()
-            return ConversationHandler.END
+
+            await update.message.reply_text("Magnet added. Send another magnet or /done to finish.")
+            return ADD_MAGNET_STATE
 
         except Exception as e:
             await update.message.reply_text(
@@ -755,7 +767,8 @@ class Core(CorePluginBase):
                 tid = self.core.add_torrent_file(None, b64encode(file_contents),
                                                  {'delugram_chat_id': update.effective_chat.id})
                 self.apply_label(tid, context)
-                return ConversationHandler.END
+                await update.message.reply_text("Torrent file added. Send another file or /done to finish.")
+                return ADD_TORRENT_STATE
 
             else:
                 await update.message.reply_text(
@@ -785,7 +798,8 @@ class Core(CorePluginBase):
                 tid = self.core.add_torrent_file(None, b64encode(file_contents),
                                                  {'delugram_chat_id': update.effective_chat.id})
                 self.apply_label(tid, context)
-                return ConversationHandler.END
+                await update.message.reply_text("Torrent from URL added. Send another URL or /done to finish.")
+                return ADD_URL_STATE
 
             else:
                 await update.message.reply_text(
