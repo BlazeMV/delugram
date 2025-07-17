@@ -303,7 +303,7 @@ class Core(CorePluginBase):
             f"<pre>update = {update_str}"
             "</pre>\n\n"
             f"<pre>context.chat_data = {chat_data}</pre>\n\n"
-            f"<pre>context.chat_data = {user_data}</pre>\n\n"
+            f"<pre>context.user_data = {user_data}</pre>\n\n"
             f"<pre>{tb_string}</pre>"
         )
 
