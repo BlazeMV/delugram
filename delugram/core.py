@@ -930,7 +930,7 @@ class Core(CorePluginBase):
 
             # Iterate over key values inside self.config['chat_torrents'][chat_id] and if key (torrent_id)
             # is not found in torrents list, remove that key from self.config['chat_torrents'][chat_id]
-            for torrent_id in self.config['chat_torrents'][chat_id]:
+            for torrent_id in list(self.config['chat_torrents'][chat_id]):
                 if torrent_id not in torrents:
                     log.info(f"Removing torrent {torrent_id} from chat {chat_id}, Reason: Torrent not found")
                     del self.config['chat_torrents'][chat_id][torrent_id]
