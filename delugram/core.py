@@ -370,7 +370,7 @@ class Core(CorePluginBase):
             },
             {
                 'name': 'status',
-                'description': 'Show status of active torrents',
+                'description': 'Show status of your torrents',
                 'handler': CommandHandler('status', self.status_command_handler),
                 'list_in_help': True
             },

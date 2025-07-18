@@ -53,7 +53,8 @@ Delugram is a Deluge plugin that integrates Telegram with your Deluge server, al
 Use the following Telegram commands to interact with Delugram:
 
 - `/add` - **Add a new torrent**
-- `/status` - **Show status of active torrents**
+- `/status` - **Show status of your torrents**
+- `/ongoing` - **Show status of ongoing torrents**
 - `/cancel` - **Cancel the current operation**
 - `/done` - **Finish adding one or more torrents**
 - `/help` - **List all available commands**
