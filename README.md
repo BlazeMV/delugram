@@ -55,6 +55,7 @@ Use the following Telegram commands to interact with Delugram:
 - `/add` - **Add a new torrent**
 - `/status` - **Show status of active torrents**
 - `/cancel` - **Cancel the current operation**
+- `/done` - **Finish adding one or more torrents**
 - `/help` - **List all available commands**
 - 🔔 **Get real-time notifications when torrents complete.**
 
