@@ -533,6 +533,7 @@ class Core(CorePluginBase):
         )
 
     async def cancel_command_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        context.chat_data.pop('label', None)
         await update.message.reply_text(
             text='Operation cancelled',
             parse_mode='Markdown',
@@ -596,6 +597,7 @@ class Core(CorePluginBase):
             )
 
     async def done_command_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        context.chat_data.pop('label', None)
         await update.message.reply_text(
             text='Finished adding torrents.',
             parse_mode='Markdown',
@@ -750,6 +752,7 @@ class Core(CorePluginBase):
             )
             log.error(str(e) + '\n' + traceback.format_exc())
 
+        context.chat_data.pop('label', None)
         return ConversationHandler.END
 
     async def add_torrent_state_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -782,6 +785,7 @@ class Core(CorePluginBase):
             )
             log.error(str(e) + '\n' + traceback.format_exc())
 
+        context.chat_data.pop('label', None)
         return ConversationHandler.END
 
     async def add_url_state_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -813,6 +817,7 @@ class Core(CorePluginBase):
             )
             log.error(str(e) + '\n' + traceback.format_exc())
 
+        context.chat_data.pop('label', None)
         return ConversationHandler.END
 
     async def invalid_input_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -853,7 +858,7 @@ class Core(CorePluginBase):
     def apply_label(self, tid, context: ContextTypes.DEFAULT_TYPE):
         try:
             self.load_available_labels()
-            label = context.chat_data.pop('label', None)
+            label = context.chat_data.get('label', None)
 
             if label is not None and label != "No Label" and self.label_plugin and label in self.available_labels:
                 self.label_plugin.set_torrent(tid, label.lower())
