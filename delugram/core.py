@@ -375,6 +375,12 @@ class Core(CorePluginBase):
                 'list_in_help': True
             },
             {
+                'name': 'ongoing',
+                'description': 'Show status of ongoing torrents',
+                'handler': CommandHandler('ongoing', self.ongoing_command_handler),
+                'list_in_help': True
+            },
+            {
                 'name': 'cancel',
                 'description': 'Cancels the current operation',
                 'handler': CommandHandler('cancel', self.cancel_command_handler),
@@ -525,6 +531,32 @@ class Core(CorePluginBase):
                                ('Active', 'Downloading', 'Seeding',
                                 'Paused', 'Checking', 'Error', 'Queued'
                                 ) and str(t.torrent_id) in chat_torrents, page=page)
+
+        await update.message.reply_text(
+            text=message,
+            parse_mode='Markdown'
+            # reply_to_message_id=update.message.message_id
+        )
+
+    async def ongoing_command_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # clean up existing torrents (if removed or any other reason)
+        self.cleanup_chat_torrents()
+
+        #get first arg from the command as page number, default to 1
+        try:
+            page = int(context.args[0] if context.args and len(context.args) else 1)
+            if page < 1:
+                page = 1
+        except (TypeError, ValueError):
+            page = 1
+
+        log.debug(f"Page: {page}")
+
+        chat_torrents = self.config['chat_torrents'].get(str(update.effective_chat.id), [])
+        message = self.list_torrents(lambda t:
+                                     t.get_status(('state',))['state'] in
+                                     ('Downloading', 'Queued')
+                                     and str(t.torrent_id) in chat_torrents, page=page)
 
         await update.message.reply_text(
             text=message,
