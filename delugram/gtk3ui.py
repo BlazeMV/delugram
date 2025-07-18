@@ -213,8 +213,8 @@ class Gtk3UI(Gtk3PluginBase):
         self.builder.get_object('input_telegram_token').set_text(self.config.get('telegram_token', ''))
         self.builder.get_object('input_admin_chat_id').set_text(self.config.get('admin_chat_id', ''))
         self.builder.get_object('polling_status_label').set_text(
-            'Running ✅' if self.config.get('polling', False)
-            else 'Stopped 🚫 (Double check Telegram Token and Restart Polling)')
+            'Running ✓' if self.config.get('polling', False)
+            else 'Stopped ✗ (Double check Telegram Token and Restart Polling)')
 
         # refresh registered chats list
         self.store.clear()
